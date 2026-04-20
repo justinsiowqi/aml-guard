@@ -58,6 +58,14 @@ def build_mcp_zip(output_name: str = "aml_guard_mcp.zip", cleanup: bool = True) 
     shutil.copy(mcp_dir / "server.py", dist_dir / "server.py")
     print("  Copied: server.py")
 
+    # envs.json
+    envs_src = mcp_dir / "envs.json"
+    if envs_src.exists():
+        shutil.copy(envs_src, dist_dir / "envs.json")
+        print(f"  Copied: envs.json")
+    else:
+        print(f"  Warning: envs.json not found at {envs_src}")
+
     # requirements.txt from project root
     req_src = project_root / "requirements.txt"
     if req_src.exists():

@@ -85,29 +85,48 @@ def retrieve_typology_chunks(
     conn: "Neo4jConnection | None" = None,
 ) -> dict:
     """
-    Embed query_text with OpenAI and run vector search over Layer 2 chunks.
-
-    Mirror of loanguard-ai's retrieve_regulatory_chunks() — identical logic,
-    just pointed at FATF/AUSTRAC typology chunks instead of APRA standards.
-
-    TODO:
-      1. from openai import OpenAI; client = OpenAI()
-      2. embedding = client.embeddings.create(model=EMBEDDING_MODEL, input=query_text).data[0].embedding
-      3. Call src.graph.queries.vector_search_typology_chunks(conn, embedding, typology_id, top_k)
-      4. Return structured result dict.
+    Embed query_text via H2OGPTe and run vector search over Layer 2 chunks.
 
     Returns:
         {
           "query": str,
           "chunks": [
-            {"chunk_id": str, "text": str, "section_id": str, "score": float},
+            {"chunk_id": str, "text": str, "paragraph": str, "section_id": str, "score": float},
             ...
           ]
         }
     """
-    raise NotImplementedError(
-        "retrieve_typology_chunks() — implement after Layer 2 embeddings are built."
-    )
+    import os
+    from h2ogpte import H2OGPTE
+    from src.graph.queries import vector_search_typology_chunks
+    from src.agent.config import EMBEDDING_MODEL
+
+    h2ogpte_url = os.getenv("H2OGPTE_URL") or os.getenv("H2OGPTE_ADDRESS")
+    h2ogpte_key = os.getenv("H2OGPTE_API_KEY")
+    if not h2ogpte_url or not h2ogpte_key:
+        raise RuntimeError("H2OGPTE_URL (or H2OGPTE_ADDRESS) and H2OGPTE_API_KEY must be set.")
+
+    client = H2OGPTE(address=h2ogpte_url, api_key=h2ogpte_key)
+    embedding = client.encode_for_retrieval(
+        chunks=[query_text],
+        embedding_model=EMBEDDING_MODEL,
+    )[0]
+
+    rows = vector_search_typology_chunks(conn, embedding, typology_id, top_k)
+
+    return {
+        "query": query_text,
+        "chunks": [
+            {
+                "chunk_id":  r["chunk_id"],
+                "text":      r["text"],
+                "paragraph": r["paragraph"],
+                "section_id": r["section_id"],
+                "score":     r["score"],
+            }
+            for r in rows
+        ],
+    }
 
 
 def persist_case_finding(

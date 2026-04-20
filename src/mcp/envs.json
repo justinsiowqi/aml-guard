@@ -1,0 +1,7 @@
+{
+  "H2OGPTE_API_KEY": "os.environ/H2OGPTE_API_KEY",
+  "H2OGPTE_ADDRESS": "os.environ/H2OGPTE_ADDRESS",
+  "NEO4J_URI": "os.environ/NEO4J_URI",
+  "NEO4J_USERNAME": "os.environ/NEO4J_USERNAME",
+  "NEO4J_PASSWORD": "os.environ/NEO4J_PASSWORD"
+}

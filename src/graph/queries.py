@@ -86,15 +86,47 @@ def vector_search_typology_chunks(
     min_score: float = 0.75,
 ) -> list[dict]:
     """
-    Vector similarity search over Layer 2 Chunk nodes.
+    Vector similarity search over Layer 2 Chunk nodes using Neo4j vector index
+    'chunk_embeddings' (cosine similarity, 1024-dim bge-large-en-v1.5).
 
-    TODO: implement. Uses Neo4j vector index 'chunk_embeddings'
-          (cosine similarity, 1536-dim OpenAI text-embedding-3-small).
-
-    Lower min_score than loanguard-ai (0.85 → 0.75) because typology documents
-    use broader language than precise regulatory thresholds.
+    Optionally scoped to a single regulation via typology_id.
     """
-    raise NotImplementedError("vector_search_typology_chunks() — implement after Layer 2 embeddings are built.")
+    if typology_id:
+        cypher = """
+        CALL db.index.vector.queryNodes('chunk_embeddings', $top_k, $embedding)
+        YIELD node AS c, score
+        MATCH (req:Requirement)-[:HAS_CHUNK]->(c)
+        MATCH (s:Section)-[:HAS_REQUIREMENT]->(req)
+        WHERE req.regulation_id = $typology_id AND score >= $min_score
+        RETURN c.chunk_id   AS chunk_id,
+               c.text       AS text,
+               c.paragraph  AS paragraph,
+               s.section_id AS section_id,
+               score
+        ORDER BY score DESC
+        LIMIT $top_k
+        """
+    else:
+        cypher = """
+        CALL db.index.vector.queryNodes('chunk_embeddings', $top_k, $embedding)
+        YIELD node AS c, score
+        MATCH (req:Requirement)-[:HAS_CHUNK]->(c)
+        MATCH (s:Section)-[:HAS_REQUIREMENT]->(req)
+        WHERE score >= $min_score
+        RETURN c.chunk_id   AS chunk_id,
+               c.text       AS text,
+               c.paragraph  AS paragraph,
+               s.section_id AS section_id,
+               score
+        ORDER BY score DESC
+        LIMIT $top_k
+        """
+    return conn.run_query(cypher, {
+        "embedding":   embedding,
+        "top_k":       top_k,
+        "min_score":   min_score,
+        "typology_id": typology_id,
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────
