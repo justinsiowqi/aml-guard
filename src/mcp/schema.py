@@ -148,8 +148,10 @@ Node: Chunk
               paragraph (str),
               text (str),
               chunk_index (int),
-              embedding (list[float])        # 1024-dim H2OGPTe bge-large-en-v1.5
-                                             # populated by notebook 215
+              embedding (list[float])        # dense vector from H2OGPTe
+                                             # client.encode_for_retrieval(); populated by
+                                             # notebook 215. Dimension depends on the model
+                                             # (e.g. 1024 for mxbai-embed-large-v1).
 
 ### LAYER 2 Relationships
 
@@ -160,7 +162,10 @@ Node: Chunk
 (Requirement)-[:HAS_CHUNK]->(Chunk)
 (Chunk)-[:NEXT_CHUNK]->(Chunk)                 # chunk-index ordering within paragraph
 (Requirement)-[:CROSS_REFERENCES]->(Requirement)
-(Chunk)-[:SEMANTICALLY_SIMILAR {score}]->(Chunk)  # cosine > 0.85, built by notebook 215
+(Chunk)-[:SEMANTICALLY_SIMILAR {score}]->(Chunk)  # optional, not built by default;
+                                                  # notebook 215 only creates the vector
+                                                  # index `chunk_embeddings`. Add this edge
+                                                  # in a follow-up pass if needed.
 
 ### LAYER 3 — Case Assessments (runtime, written by agent)
 
