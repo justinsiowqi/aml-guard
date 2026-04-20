@@ -148,7 +148,7 @@ Node: Chunk
               paragraph (str),
               text (str),
               chunk_index (int),
-              embedding (list[float])        # 1536-dim OpenAI text-embedding-3-small
+              embedding (list[float])        # 1024-dim H2OGPTe bge-large-en-v1.5
                                              # populated by notebook 215
 
 ### LAYER 2 Relationships

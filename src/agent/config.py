@@ -21,15 +21,8 @@ PRE_RUN_RESULT_CHAR_LIMIT = 4096
 
 MAX_RETRY_SECONDS = 120
 
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL = "bge-large-en-v1.5"
 
 # Single agent — max agentic loop iterations and context window pairs.
 AML_MAX_ITERATIONS   = 14
 AML_MAX_HISTORY_PAIRS = 6
-
-
-def make_anthropic_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
-        default_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-    )

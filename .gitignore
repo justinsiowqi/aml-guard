@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 data/layer_2/regulatory_documents/*.pdf
 data/layer_2/extracted/*.csv
+src/mcp/*.zip
