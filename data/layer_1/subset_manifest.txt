@@ -1,0 +1,9 @@
+seed_intermediary_regex: None
+seed_officer_regex: NAWAZ SHARIF$|POROSHENKO|SIGMUNDUR.*GUNNLAUG|IAN CAMERON|MAURICIO MACRI
+seed_entity_regex: None
+source_id_filter: Panama Papers
+hops: 3
+max_entities: 250
+seed_count: 8
+node_count: 157
+edge_count: 258

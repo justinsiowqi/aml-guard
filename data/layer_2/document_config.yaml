@@ -1,55 +1,11 @@
-# Layer 2 — Typology document processing configuration
-# The extraction notebook (211_extract_typologies.ipynb) reads this file.
-# Add new documents by appending to the 'documents' list — no code changes required.
-#
-# Place source PDFs in data/layer_2/regulatory_documents/
-
-pdf_dir: data/layer_2/regulatory_documents
-
+# Document configuration for Layer 2 parsing pipeline.
 documents:
-
-  - typology_id: "FATF-REC40"
-    name: "FATF 40 Recommendations"
-    issuing_body: "FATF"
-    document_type: "international_standard"
-    effective_date: "2023-06-01"
-    is_enforceable: false
-    pdf_path: "FATF_40_Recommendations.pdf"
-    section_id_prefix: "FATF-REC40"
-    default_severity: "HIGH"
-    supplemental_prompt: |
-      This document contains the FATF 40 Recommendations — the international
-      standard for AML/CFT. Extract red flag indicators, not numeric thresholds.
-
-      PAY SPECIAL ATTENTION TO:
-      - Recommendations 10-12 (CDD, enhanced due diligence, PEPs)
-      - Recommendations 16 (wire transfers)
-      - Recommendations 19 (high-risk countries)
-      - Recommendations 24-25 (beneficial ownership transparency)
-
-      For each indicator, record:
-        indicator_type: behavioral | structural | transactional
-        severity: HIGH | MEDIUM | LOW (based on language: "must" = HIGH, "should" = MEDIUM)
-
-  - typology_id: "AUSTRAC-GUIDE"
-    name: "AUSTRAC AML/CTF Typologies and Case Studies"
-    issuing_body: "AUSTRAC"
-    document_type: "guidance"
-    effective_date: "2024-01-01"
-    is_enforceable: false
-    pdf_path: "AUSTRAC_Typologies_Guide.pdf"
-    section_id_prefix: "AUSTRAC-GUIDE"
-    default_severity: "MEDIUM"
-    supplemental_prompt: |
-      This is AUSTRAC guidance on common financial crime typologies observed
-      in Australia. Focus on extracting:
-      - Named typology patterns (structuring, smurfing, trade-based ML, etc.)
-      - Behavioural red flags per typology
-      - Industry-specific risk indicators
-
-      Each typology should become a Section node; each red flag an Indicator node.
-
-  # TODO: add additional documents as needed, e.g.:
-  # - typology_id: "FATF-GUIDANCE-VASP"
-  #   name: "FATF Guidance for a Risk-Based Approach — Virtual Assets"
-  #   ...
+  - regulation_id: MAS-626
+    name: MAS Notice 626 - Prevention of Money Laundering and Countering the Financing of Terrorism - Banks
+    issuing_body: Monetary Authority of Singapore
+    source_file: MAS-Notice-626.pdf
+    document_type: notice
+    effective_date: 2024-04-01
+    last_revised: 2025-06-30
+    enforceable: true
+    parser: parse_mas_notice.py

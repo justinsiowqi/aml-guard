@@ -24,86 +24,155 @@ from typing import Any
 GRAPH_SCHEMA_HINT = """
 ## Neo4j Graph Schema — AML Guard
 
-### LAYER 1 — AML Entity Graph
+Investigation domain: offshore shell-company networks (ICIJ Panama Papers subset)
+cross-referenced against Singapore's AML regulation (MAS Notice 626).
 
-TODO: Fill in node labels, properties, and relationships once your teammate
-      has finalised the data model and loaded the CSVs into Neo4j.
+Account and Transaction nodes are deliberately out of scope in this build —
+the demo focuses on corporate-ownership opacity, not bank-to-bank money flows.
 
-Example structure to document here:
+### LAYER 1 — Offshore Entity Graph
 
-Node: Entity
-  Properties: entity_id (str, unique), name (str), type (str: individual|corporate),
-              risk_tier (str: high|medium|low), is_pep (bool), sanctions_match (bool),
-              kyc_status (str: verified|pending|failed), country (str)
+Node: Person
+  Properties: node_id (str, unique),   # ICIJ officer node_id (numeric string)
+              name (str),
+              countries (str),         # human-readable country names
+              country_codes (str),     # comma-separated ISO alpha-3
+              source_leak (str),       # e.g. "Panama Papers"
+              valid_until (str),
+              note (str)
 
-Node: Account
-  Properties: account_id (str, unique), entity_id (str), account_type (str),
-              currency (str), country (str), opened_date (date), status (str),
-              average_monthly_balance (float)
+Node: Company
+  Properties: node_id (str, unique),   # ICIJ entity node_id
+              name (str),
+              original_name (str),
+              former_name (str),
+              jurisdiction (str),      # ISO alpha-3 of incorporation
+              jurisdiction_description (str),
+              company_type (str),
+              address (str),           # inline address string from ICIJ
+              incorporation_date (str),
+              inactivation_date (str),
+              struck_off_date (str),
+              status (str),
+              service_provider (str),  # e.g. "Mossack Fonseca"
+              ibcRUC (str),
+              country_codes (str),
+              countries (str),
+              source_leak (str)
 
-Node: Transaction
-  Properties: transaction_id (str, unique), from_account_id (str),
-              to_account_id (str), amount (float), currency (str),
-              date (date), type (str), flagged_suspicious (bool),
-              country_of_origin (str), country_of_destination (str)
+Node: Intermediary
+  Properties: node_id (str, unique),
+              name (str),
+              status (str),
+              internal_id (str),
+              address (str),
+              countries (str),
+              country_codes (str),
+              source_leak (str)
 
-Node: Alert
-  Properties: alert_id (str, unique), entity_id (str), alert_type (str),
-              severity (str: HIGH|MEDIUM|LOW), status (str: open|closed|escalated),
-              created_at (datetime), description (str)
+Node: Address   # derived from inline Company/Intermediary address strings
+  Properties: node_id (str, unique),   # synthetic prefix "addr_<int>"
+              address (str),           # normalised address text
+              source (str)             # always "derived_inline"
 
 Node: Jurisdiction
-  Properties: jurisdiction_id (str, unique), name (str), country (str),
-              fatf_status (str: member|non-member|blacklist|greylist),
-              aml_risk_rating (str: low|medium|high)
+  Properties: jurisdiction_id (str, unique),  # ISO alpha-3 code (e.g. "BVI", "PMA")
+              name (str),
+              country (str),
+              country_code (str),
+              aml_risk_rating (str)    # "high" | "medium" | "low"
 
-### LAYER 1 Relationships (TODO: update)
+### LAYER 1 Relationships
 
-(Entity)-[:HAS_ACCOUNT]->(Account)
-(Transaction)-[:FROM_ACCOUNT]->(Account)
-(Transaction)-[:TO_ACCOUNT]->(Account)
-(Entity)-[:OWNS]->(Entity)
-(Entity)-[:REGISTERED_IN]->(Jurisdiction)
-(Entity)-[:RESIDES_IN]->(Jurisdiction)
-(Alert)-[:RELATES_TO]->(Entity)
+(Person)-[:IS_OFFICER_OF {relationship, source_leak, start_date, end_date}]->(Company)
+  # ICIJ rel_type "officer_of". `relationship` carries the raw role string
+  # (e.g. "director", "shareholder", "beneficial owner").
 
-### LAYER 2 — Typology Documents
+(Intermediary)-[:INTERMEDIARY_OF {source_leak}]->(Company)
+  # ICIJ rel_type "intermediary_of" — the registered agent that set up the company.
 
-Node: Typology  (replaces Regulation from loanguard-ai)
-  Properties: typology_id (str), name (str), issuing_body (str: FATF|AUSTRAC),
-              document_type (str), effective_date (date)
+(Company)-[:REGISTERED_AT {source_leak}]->(Address)
+  # Derived from the inline `address` column. Enables shared-address detection.
+
+(Intermediary)-[:REGISTERED_AT {source_leak}]->(Address)
+  # Same derivation for intermediaries.
+
+(Company)-[:SHARES_ADDRESS_WITH {address_node_id}]->(Company)
+  # Derived red flag: two Companies sharing one Address (clusters of 2-8 only;
+  # larger clusters are registered-agent buildings and are filtered out).
+
+(Company)-[:SIMILAR_TO {source_leak}]->(Company)
+  # ICIJ rel_type "similar" — companies ICIJ flagged as closely matching.
+
+(Company)-[:INCORPORATED_IN]->(Jurisdiction)
+  # Derived at ingest from Company.jurisdiction → Jurisdiction.jurisdiction_id.
+
+### LAYER 2 — MAS Notice 626 Regulatory Knowledge
+
+Node: Regulation
+  Properties: regulation_id (str, unique),  # e.g. "MAS-626"
+              name (str),
+              issuing_body (str),            # "Monetary Authority of Singapore"
+              document_type (str),           # "notice"
+              effective_date (date),
+              last_revised (date),
+              is_enforceable (bool),
+              source_file (str)
 
 Node: Section
-  Properties: section_id (str), typology_id (str), title (str), text (str)
+  Properties: section_id (str, unique),      # "MAS-626-S6"
+              regulation_id (str),
+              section_number (str),
+              title (str),
+              paragraph_count (int),
+              word_count (int)
 
-Node: Indicator  (replaces Requirement — red flag indicators, not thresholds)
-  Properties: indicator_id (str), section_id (str), description (str),
-              indicator_type (str: behavioral|structural|transactional),
-              severity (str: HIGH|MEDIUM|LOW)
+Node: Requirement   # paragraph-level; equivalent to LoanGuard's "requirement"
+  Properties: requirement_id (str, unique),  # "MAS-626-6.3"
+              section_id (str),
+              paragraph (str),               # "6.3"
+              text (str),                    # full paragraph text
+              word_count (int)
+
+Node: Threshold   # numeric thresholds extracted from requirement text
+  Properties: threshold_id (str, unique),
+              paragraph (str),
+              metric (str),                  # "transaction_value" | "percentage" | "duration"
+              operator (str),                # ">=" | "<=" | "=="
+              value (str),                   # numeric as string
+              unit (str),                    # "SGD" | "percent" | "day" | "month" | "year"
+              context (str),                 # ±80 char window of source text
+              threshold_type (str)           # "trigger" | "informational"
 
 Node: Chunk
-  Properties: chunk_id (str), section_id (str), text (str),
-              token_count (int), chunk_index (int),
-              embedding (list[float] — 1536 dims, OpenAI text-embedding-3-small)
+  Properties: chunk_id (str, unique),        # "6.3-c0"
+              paragraph (str),
+              text (str),
+              chunk_index (int),
+              embedding (list[float])        # 1536-dim OpenAI text-embedding-3-small
+                                             # populated by notebook 215
 
 ### LAYER 2 Relationships
 
-(Typology)-[:APPLIES_TO_JURISDICTION]->(Jurisdiction)
-(Typology)-[:HAS_SECTION]->(Section)
-(Section)-[:HAS_INDICATOR]->(Indicator)
-(Section)-[:HAS_CHUNK]->(Chunk)
-(Chunk)-[:NEXT_CHUNK]->(Chunk)
-(Chunk)-[:SEMANTICALLY_SIMILAR {score}]->(Chunk)
+(Regulation)-[:HAS_SECTION]->(Section)
+(Section)-[:NEXT_SECTION]->(Section)           # section-number ordering
+(Section)-[:HAS_REQUIREMENT]->(Requirement)
+(Requirement)-[:DEFINES_THRESHOLD]->(Threshold)
+(Requirement)-[:HAS_CHUNK]->(Chunk)
+(Chunk)-[:NEXT_CHUNK]->(Chunk)                 # chunk-index ordering within paragraph
+(Requirement)-[:CROSS_REFERENCES]->(Requirement)
+(Chunk)-[:SEMANTICALLY_SIMILAR {score}]->(Chunk)  # cosine > 0.85, built by notebook 215
 
 ### LAYER 3 — Case Assessments (runtime, written by agent)
 
 Node: CaseAssessment
-  Properties: assessment_id (str, unique), entity_id (str), entity_type (str),
+  Properties: assessment_id (str, unique), subject_id (str), subject_type (str),
               verdict (str: HIGH_RISK|MEDIUM_RISK|LOW_RISK|CLEARED),
               risk_score (float 0-1), agent (str), created_at (datetime)
 
 Node: RiskFinding
-  Properties: finding_id (str), finding_type (str), severity (str: HIGH|MEDIUM|LOW|INFO),
+  Properties: finding_id (str), finding_type (str),
+              severity (str: HIGH|MEDIUM|LOW|INFO),
               description (str), pattern_name (str|null)
 
 Node: InvestigationStep
@@ -112,16 +181,18 @@ Node: InvestigationStep
 
 ### LAYER 3 Relationships
 
-(Entity)-[:HAS_ASSESSMENT]->(CaseAssessment)
+(Person|Company|Intermediary)-[:HAS_ASSESSMENT]->(CaseAssessment)
 (CaseAssessment)-[:HAS_FINDING]->(RiskFinding)
 (CaseAssessment)-[:HAS_STEP]->(InvestigationStep)
-(InvestigationStep)-[:CITES_TYPOLOGY]->(Section)
+(InvestigationStep)-[:CITES_REQUIREMENT]->(Requirement)
 (InvestigationStep)-[:CITES_CHUNK {similarity_score}]->(Chunk)
 
 ### Cypher Best Practices
 - Always use parameterised queries ($param) — never string interpolation.
 - For variable-length paths use size(r) not length(r).
 - Collect rel types with [rel IN r | type(rel)].
+- Person, Company, Intermediary, Address share no common label — do not write
+  `MATCH (e:Entity)`. Query each label explicitly or use `MATCH (n) WHERE n.node_id = $id`.
 """
 
 
@@ -180,163 +251,178 @@ class AnomalyPattern:
 
 ANOMALY_REGISTRY: dict[str, AnomalyPattern] = {
 
-    "transaction_structuring": AnomalyPattern(
+    "common_controller_across_shells": AnomalyPattern(
         description=(
-            "Multiple sub-threshold cash transactions flowing into the same account "
-            "from distinct sources, consistent with structuring to avoid AUSTRAC "
-            "threshold transaction reporting (TTR) obligations."
+            "A single natural person holds officer/director roles across multiple "
+            "offshore shell companies. Suggests a centrally-controlled opacity "
+            "structure (FATF Recommendation 24 — beneficial ownership)."
         ),
         severity=Severity.HIGH,
-        id_key="target_account_id",
-        entity_label="Account",
-        entity_node_alias="target",
-        entity_id_field="account_id",
-        # TODO: update Cypher to match your Account + Transaction schema.
+        id_key="person_id",
+        entity_label="Person",
+        entity_node_alias="p",
+        entity_id_field="node_id",
+        params={"min_shell_count": 3},
+        typology_id="MAS-626-8",
         cypher="""
-MATCH (t:Transaction)-[:TO_ACCOUNT]->(target:Account)
-WHERE t.flagged_suspicious = true
-  AND t.amount < 10000
-WITH target,
-     count(t)                                     AS tx_count,
-     sum(t.amount)                                AS total_amount,
-     collect(DISTINCT t.from_account_id)[0..10]   AS source_accounts,
-     collect(t.transaction_id)[0..10]             AS sample_txn_ids,
-     min(t.date)                                  AS earliest,
-     max(t.date)                                  AS latest
-WHERE tx_count >= 3
-RETURN target.account_id   AS target_account_id,
-       tx_count,
-       round(total_amount) AS total_amount,
-       source_accounts,
-       sample_txn_ids,
-       earliest,
-       latest
-ORDER BY tx_count DESC
+MATCH (p:Person)-[:IS_OFFICER_OF]->(c:Company)
+WITH p,
+     count(c)                          AS shell_count,
+     collect(c.name)[0..10]            AS shell_names,
+     collect(DISTINCT c.jurisdiction)  AS jurisdictions
+WHERE shell_count >= $min_shell_count
+RETURN p.node_id        AS person_id,
+       p.name           AS person_name,
+       p.countries      AS countries,
+       shell_count,
+       shell_names,
+       jurisdictions
+ORDER BY shell_count DESC
 LIMIT 20
-""",
-    ),
-
-    "rapid_fund_movement": AnomalyPattern(
-        description=(
-            "Funds received into an account and moved out again within 48 hours "
-            "with little or no residual balance. Consistent with pass-through "
-            "or layering typologies."
-        ),
-        severity=Severity.HIGH,
-        id_key="account_id",
-        entity_label="Account",
-        entity_node_alias="a",
-        entity_id_field="account_id",
-        # TODO: implement once Transaction date fields and account schema are confirmed.
-        cypher="""
-// TODO: implement rapid_fund_movement Cypher
-// Suggested approach: find accounts where inbound and outbound transactions
-// occur within duration.inDays(t_in.date, t_out.date) <= 2
-RETURN 'rapid_fund_movement pattern not yet implemented' AS status
-LIMIT 1
 """,
     ),
 
     "layered_ownership": AnomalyPattern(
         description=(
-            "Multi-hop OWNS chains (depth >= 2) obscuring the true beneficial "
-            "owner of an entity. Consistent with FATF Recommendation 24 "
-            "beneficial ownership opacity typology."
+            "Multi-hop connection from a Person to a target Company through "
+            "a chain of intermediary officerships or address-sharing relations. "
+            "Obscures the true beneficial owner (FATF Rec. 24-25)."
         ),
         severity=Severity.HIGH,
-        id_key="ultimate_owner_id",
-        entity_label="Entity",
-        entity_node_alias="owner",
-        entity_id_field="entity_id",
-        # TODO: update node label from Borrower → Entity once Layer 1 is loaded.
+        id_key="target_company_id",
+        entity_label="Company",
+        entity_node_alias="target",
+        entity_id_field="node_id",
+        params={"max_depth": 4},
+        typology_id="MAS-626-6",
         cypher="""
-MATCH path = (owner:Entity)-[:OWNS*2..]->(subsidiary:Entity)
-WITH owner,
-     subsidiary,
-     length(path)                                         AS chain_depth,
-     [n IN nodes(path) | n.entity_id]                    AS ownership_chain
+MATCH path = (p:Person)-[:IS_OFFICER_OF|SHARES_ADDRESS_WITH*2..4]-(target:Company)
+WITH p,
+     target,
+     path,
+     [r IN relationships(path) | type(r)] AS hop_types,
+     size(relationships(path))             AS chain_depth
 WHERE chain_depth >= 2
-RETURN owner.entity_id    AS ultimate_owner_id,
-       owner.name         AS owner_name,
-       subsidiary.entity_id AS subsidiary_id,
-       subsidiary.name    AS subsidiary_name,
+RETURN p.node_id       AS ultimate_person_id,
+       p.name          AS ultimate_person_name,
+       target.node_id  AS target_company_id,
+       target.name     AS target_company_name,
        chain_depth,
-       ownership_chain
-ORDER BY chain_depth DESC
+       hop_types
+ORDER BY chain_depth DESC, p.name
 LIMIT 30
 """,
     ),
 
     "high_risk_jurisdiction": AnomalyPattern(
         description=(
-            "Entities registered in or transacting with jurisdictions on the "
-            "FATF blacklist or greylist, or with aml_risk_rating = 'high'. "
-            "Requires enhanced due diligence per FATF Recommendation 19."
+            "Company registered in a jurisdiction rated `high` for AML risk — "
+            "BVI, Panama, Bahamas, Seychelles, and similar offshore havens. "
+            "Triggers enhanced due diligence under MAS Notice 626 paragraph 4.1(b)."
         ),
         severity=Severity.HIGH,
-        id_key="entity_id",
-        entity_label="Entity",
-        entity_node_alias="e",
-        entity_id_field="entity_id",
-        # TODO: update to match your Jurisdiction node and relationship names.
+        id_key="company_id",
+        entity_label="Company",
+        entity_node_alias="c",
+        entity_id_field="node_id",
+        typology_id="MAS-626-4",
         cypher="""
-MATCH (e:Entity)-[:REGISTERED_IN|RESIDES_IN]->(j:Jurisdiction)
+MATCH (c:Company)-[:INCORPORATED_IN]->(j:Jurisdiction)
 WHERE j.aml_risk_rating = 'high'
-   OR j.fatf_status IN ['blacklist', 'greylist']
-RETURN e.entity_id        AS entity_id,
-       e.name             AS name,
-       j.jurisdiction_id  AS jurisdiction_id,
-       j.name             AS jurisdiction_name,
-       j.aml_risk_rating  AS aml_risk_rating,
-       j.fatf_status      AS fatf_status
-ORDER BY j.aml_risk_rating DESC, e.entity_id
+RETURN c.node_id           AS company_id,
+       c.name              AS company_name,
+       c.jurisdiction      AS jurisdiction_code,
+       j.name              AS jurisdiction_name,
+       j.aml_risk_rating   AS risk_rating,
+       c.service_provider  AS service_provider
+ORDER BY c.name
 LIMIT 30
 """,
     ),
 
-    "pep_association": AnomalyPattern(
+    "shared_address_cluster": AnomalyPattern(
         description=(
-            "Entity is a politically exposed person (PEP) or is directly "
-            "associated with a PEP via ownership or directorship. "
-            "Triggers enhanced due diligence per FATF Recommendation 12."
+            "Multiple distinct Companies share a single registered address in "
+            "a cluster small enough (2-8) to be a beneficial-ownership signal "
+            "rather than a corporate-services building. Classic shell indicator."
         ),
         severity=Severity.HIGH,
-        id_key="entity_id",
-        entity_label="Entity",
-        entity_node_alias="e",
-        entity_id_field="entity_id",
-        # TODO: update once is_pep field and relationship schema are confirmed.
+        id_key="address_id",
+        entity_label="Address",
+        entity_node_alias="a",
+        entity_id_field="node_id",
+        typology_id="MAS-626-6",
         cypher="""
-MATCH (e:Entity)
-WHERE e.is_pep = true
-   OR e.sanctions_match = true
-RETURN e.entity_id  AS entity_id,
-       e.name       AS name,
-       e.is_pep     AS is_pep,
-       e.sanctions_match AS sanctions_match
-ORDER BY e.entity_id
-LIMIT 30
+MATCH (c:Company)-[:REGISTERED_AT]->(a:Address)
+WITH a,
+     count(DISTINCT c)             AS company_count,
+     collect(DISTINCT c.name)[0..10] AS companies
+WHERE company_count BETWEEN 2 AND 8
+RETURN a.node_id         AS address_id,
+       a.address         AS address_text,
+       company_count,
+       companies
+ORDER BY company_count DESC
+LIMIT 20
 """,
     ),
 
-    "smurfing": AnomalyPattern(
+    "intermediary_shell_network": AnomalyPattern(
         description=(
-            "Multiple low-value cash deposits across different accounts "
-            "that aggregate to a significant sum — classic smurfing / "
-            "structuring typology to avoid threshold reporting."
+            "An Intermediary (law firm / registered agent) has set up a large "
+            "number of Companies incorporated in high-risk jurisdictions — a "
+            "pattern that characterised the Panama Papers Mossack Fonseca cohort."
+        ),
+        severity=Severity.MEDIUM,
+        id_key="intermediary_id",
+        entity_label="Intermediary",
+        entity_node_alias="i",
+        entity_id_field="node_id",
+        params={"min_shell_count": 5},
+        typology_id="MAS-626-6",
+        cypher="""
+MATCH (i:Intermediary)-[:INTERMEDIARY_OF]->(c:Company)-[:INCORPORATED_IN]->(j:Jurisdiction)
+WHERE j.aml_risk_rating = 'high'
+WITH i,
+     count(DISTINCT c)                      AS shell_count,
+     collect(DISTINCT j.name)[0..5]         AS jurisdictions,
+     collect(DISTINCT c.name)[0..10]        AS sample_companies
+WHERE shell_count >= $min_shell_count
+RETURN i.node_id          AS intermediary_id,
+       i.name             AS intermediary_name,
+       i.countries        AS intermediary_country,
+       shell_count,
+       jurisdictions,
+       sample_companies
+ORDER BY shell_count DESC
+LIMIT 15
+""",
+    ),
+
+    "bearer_obscured_ownership": AnomalyPattern(
+        description=(
+            "Company records a nominee or bearer-style officer instead of a "
+            "named natural person — names like 'THE BEARER', a nominee-services "
+            "firm, or a trustee entity. Indicates deliberate opacity of "
+            "beneficial ownership."
         ),
         severity=Severity.HIGH,
-        id_key="entity_id",
-        entity_label="Entity",
-        entity_node_alias="e",
-        entity_id_field="entity_id",
-        # TODO: implement once transaction aggregation by entity is confirmed.
+        id_key="company_id",
+        entity_label="Company",
+        entity_node_alias="c",
+        entity_id_field="node_id",
+        typology_id="MAS-626-8",
         cypher="""
-// TODO: implement smurfing Cypher
-// Suggested approach: aggregate sub-$10k deposits across all accounts
-// owned by the same entity within a rolling 30-day window.
-RETURN 'smurfing pattern not yet implemented' AS status
-LIMIT 1
+MATCH (p:Person)-[:IS_OFFICER_OF]->(c:Company)
+WHERE toUpper(p.name) CONTAINS 'BEARER'
+   OR toUpper(p.name) CONTAINS 'NOMINEE'
+   OR toUpper(p.name) CONTAINS 'TRUSTEE'
+RETURN c.node_id          AS company_id,
+       c.name             AS company_name,
+       p.name             AS nominee_name,
+       c.jurisdiction     AS jurisdiction
+ORDER BY c.name
+LIMIT 20
 """,
     ),
 }
@@ -348,12 +434,15 @@ TYPOLOGY_TO_PATTERN: dict[str, str] = {
     if pat.typology_id
 }
 
-# Map entity ID prefix → applicable patterns (update prefixes to match your data).
+# Map Neo4j node label → applicable anomaly patterns. ICIJ node_ids have no
+# prefix we can use, so the dispatcher looks up the node's label first.
 ENTITY_TO_PATTERNS: dict[str, list[str]] = {
-    "ENT":   list(ANOMALY_REGISTRY.keys()),
-    "ACCT":  ["transaction_structuring", "rapid_fund_movement"],
-    "TXN":   ["transaction_structuring", "rapid_fund_movement", "smurfing"],
-    "ALERT": list(ANOMALY_REGISTRY.keys()),
+    "Person":       ["common_controller_across_shells", "layered_ownership"],
+    "Company":      ["high_risk_jurisdiction", "shared_address_cluster",
+                     "bearer_obscured_ownership", "layered_ownership"],
+    "Intermediary": ["intermediary_shell_network"],
+    "Address":      ["shared_address_cluster"],
+    "Jurisdiction": ["high_risk_jurisdiction"],
 }
 
 PATTERN_HINTS: str = "\n".join(
