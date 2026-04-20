@@ -1,11 +1,10 @@
 """
-Tool definitions passed to Claude via the Anthropic tool-use API.
+Tool definitions for the AML Guard agent — custom FastMCP tools only.
 
-AML_TOOL_DEFS replaces the dual FASTMCP_TOOL_DEFS + NEO4J_MCP_TOOLS split
-from loanguard-ai — one flat list for the single AML agent.
+All tools are implemented in src/mcp/tools_impl.py and served by src/mcp/server.py.
 
 TODO: update input_schema for each tool once the Layer 1 schema is finalised.
-      The descriptions are used verbatim by Claude to decide which tool to call —
+      The descriptions are used verbatim by the model to decide which tool to call —
       keep them precise and action-oriented.
 """
 
@@ -13,26 +12,7 @@ from __future__ import annotations
 
 AML_TOOL_DEFS: list[dict] = [
 
-    # ── Read-only Cypher (agent-generated queries) ──────────────────────────
-    {
-        "name": "read-neo4j-cypher",
-        "description": (
-            "Execute a read-only Cypher query against the AML graph database. "
-            "Use for ad-hoc entity lookups, relationship traversal, and graph "
-            "exploration not covered by the specialised tools below. "
-            "WRITE operations (MERGE, CREATE, DELETE, SET) are blocked."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query":  {"type": "string", "description": "Parameterised Cypher query string."},
-                "params": {"type": "object", "description": "Query parameter dict ($key → value)."},
-            },
-            "required": ["query"],
-        },
-    },
-
-    # ── Specialised FastMCP tools ────────────────────────────────────────────
+    # ── Custom FastMCP tools ─────────────────────────────────────────────────
     {
         "name": "traverse_entity_network",
         "description": (

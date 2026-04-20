@@ -27,10 +27,6 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 AML_MAX_ITERATIONS   = 14
 AML_MAX_HISTORY_PAIRS = 6
 
-WRITE_KEYWORDS: frozenset[str] = frozenset(
-    {"MERGE", "CREATE", "DELETE", "SET", "DETACH", "REMOVE", "DROP"}
-)
-
 
 def make_anthropic_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(

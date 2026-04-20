@@ -1,9 +1,8 @@
 """
 execute_tool dispatcher for the AML Guard agent.
 
-Mirrors loanguard-ai/src/agent/dispatcher.py but wired to AML tools.
-Neo4j MCP tools run Cypher via the shared conn.
-FastMCP tools call tools_impl functions directly.
+Routes tool calls to custom FastMCP tool implementations in src/mcp/tools_impl.py.
+The shared Neo4jConnection is passed through so tools don't open their own connections.
 
 TODO: update _dispatch() as new tools are added to tools_impl.py.
 """
@@ -12,10 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import TYPE_CHECKING, Any, Callable
-
-from src.agent.config import WRITE_KEYWORDS
 
 if TYPE_CHECKING:
     from src.graph.connection import Neo4jConnection
@@ -23,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Tools whose results are deterministic within a session — cache to avoid
-# duplicate API calls when the agent retries the same tool.
+# duplicate calls when the agent retries the same tool.
 _CACHEABLE_TOOLS: frozenset[str] = frozenset({
     "traverse_entity_network",
     "retrieve_typology_chunks",
@@ -56,20 +52,6 @@ def make_execute_tool(conn: "Neo4jConnection") -> Callable[[str, dict], Any]:
 
 
 def _dispatch(tool_name: str, tool_input: dict, conn: "Neo4jConnection") -> dict:
-    # ── Neo4j MCP ──────────────────────────────────────────────────────────
-    if tool_name == "read-neo4j-cypher":
-        query  = tool_input.get("query", "")
-        params = tool_input.get("params", {})
-        query_words = set(re.findall(r"\b[A-Z]+\b", query.upper()))
-        if query_words & WRITE_KEYWORDS:
-            return {"error": "read-neo4j-cypher does not allow write operations."}
-        return {"rows": conn.run_query(query, params)}
-
-    elif tool_name == "write-neo4j-cypher":
-        query  = tool_input.get("query", "")
-        params = tool_input.get("params", {})
-        return {"rows": conn.run_query(query, params)}
-
     # ── FastMCP — AML tools ────────────────────────────────────────────────
     # TODO: import and wire each tool from src.mcp.tools_impl as you implement them.
     # Pattern:
@@ -77,7 +59,7 @@ def _dispatch(tool_name: str, tool_input: dict, conn: "Neo4jConnection") -> dict
     #       from src.mcp.tools_impl import traverse_entity_network
     #       return traverse_entity_network(**tool_input, conn=conn)
 
-    elif tool_name == "traverse_entity_network":
+    if tool_name == "traverse_entity_network":
         # TODO: implement in src/mcp/tools_impl.py
         return {"error": "traverse_entity_network not yet implemented."}
 
