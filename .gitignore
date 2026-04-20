@@ -4,7 +4,5 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/
 .DS_Store
-data/layer_1/entities/*.csv
-data/layer_1/links/*.csv
 data/layer_2/regulatory_documents/*.pdf
 data/layer_2/extracted/*.csv

@@ -1,0 +1,4 @@
+jurisdiction_id,name,country,country_code,aml_risk_rating
+PMA,Panama,Bahamas,BHS,high
+BVI,British Virgin Islands,Jersey,JEY,high
+BAH,Bahamas,Jersey,JEY,high
