@@ -1,4 +1,4 @@
-"""Shared utilities for the AML Guard agent. Copied verbatim from loanguard-ai."""
+"""Shared utilities for the AML Guard agent."""
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ import re
 import time
 from typing import Any
 
-import anthropic
+import openai
 
 from src.agent.config import MAX_RETRY_SECONDS, TOOL_RESULT_CHAR_LIMIT
 
 logger = logging.getLogger(__name__)
 
-# TODO: update these prefixes once your teammate finalises entity ID conventions.
 ENTITY_ID_RE = re.compile(r"(ENT|ACCT|TXN|ALERT|CASE)-\d+", re.IGNORECASE)
 
 
@@ -21,25 +20,24 @@ def clean_markdown(s: str) -> str:
     return s.strip().strip("*").strip()
 
 
-def call_claude_with_retry(
-    client: anthropic.Anthropic, *, label: str = "", **kwargs: Any
-) -> anthropic.types.Message:
+def call_h2ogpte_with_retry(
+    client: openai.OpenAI, *, label: str = "", **kwargs: Any
+) -> openai.types.chat.ChatCompletion:
     for attempt in range(3):
         try:
             t0 = time.perf_counter()
-            response = client.messages.create(**kwargs)
+            response = client.chat.completions.create(**kwargs)
             elapsed = time.perf_counter() - t0
             usage = response.usage
-            cached  = getattr(usage, "cache_read_input_tokens",    0) or 0
-            created = getattr(usage, "cache_creation_input_tokens", 0) or 0
-            tag = label or response.stop_reason or ""
+            tag = label or response.choices[0].finish_reason or ""
             logger.info(
-                "%s %s %.2fs | in=%d out=%d cached=%d created=%d",
+                "%s %s %.2fs | in=%d out=%d",
                 response.model, tag, elapsed,
-                usage.input_tokens, usage.output_tokens, cached, created,
+                usage.prompt_tokens if usage else 0,
+                usage.completion_tokens if usage else 0,
             )
             return response
-        except anthropic.RateLimitError as e:
+        except openai.RateLimitError as e:
             if attempt < 2:
                 retry_after = None
                 try:
@@ -63,11 +61,8 @@ def truncate_tool_result(content: str, limit: int = TOOL_RESULT_CHAR_LIMIT) -> s
     return content
 
 
-def extract_text(response: anthropic.types.Message) -> str:
-    for block in response.content:
-        if hasattr(block, "text"):
-            return block.text
-    return ""
+def extract_text(response: openai.types.chat.ChatCompletion) -> str:
+    return response.choices[0].message.content or ""
 
 
 def trim_message_history(
