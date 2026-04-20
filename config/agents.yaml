@@ -1,4 +1,4 @@
 agents:
-  host:
+  aml:
     llm: "openai/gpt-oss-20b"
     temperature: 0.0

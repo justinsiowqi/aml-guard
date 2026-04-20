@@ -1,117 +1,118 @@
 """
-AML Guard — single agentic loop for financial crime investigation.
+AML Guard — H2OGPTe agentic investigation loop.
 
-Replaces the three-agent architecture in loanguard-ai (Orchestrator +
-ComplianceAgent + InvestigationAgent) with one agent that handles entity
-traversal, typology matching, anomaly detection, and case persistence in a
-single loop.
-
-TODO: implement run() once Layer 1 data, Layer 2 typology docs, and the
-      tool set (src/mcp/tools_impl.py) are in place.
+Uses the H2OGPTe client and MCP tool registration from src/core to run a
+single-agent financial crime investigation over the AML knowledge graph.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import TYPE_CHECKING, Callable
 
-from src.agent.config import (
-    AML_MAX_HISTORY_PAIRS,
-    AML_MAX_ITERATIONS,
-    CACHE_CONTROL_EPHEMERAL,
-    MODEL_MAIN,
-    MAX_TOKENS,
-    TEMPERATURE,
-    make_anthropic_client,
-)
-from src.agent._security import guard_tool_result
-from src.agent.utils import (
-    call_claude_with_retry,
-    extract_text,
-    trim_message_history,
-    truncate_tool_result,
-)
+from src.core.client import create_client
+from src.core.config import get_agent_config
+from src.core.setup import create_collection, create_chat, register_mcp_tool
+from src.core.prompt_loader import load_prompt, load_message
 from src.mcp.schema import (
     AMLRiskResponse,
-    RiskVerdict,
     GRAPH_SCHEMA_HINT,
     PATTERN_HINTS,
 )
-from src.mcp.tool_defs import AML_TOOL_DEFS
-from src.core.prompt_loader import load_prompt, load_message
-
-if TYPE_CHECKING:
-    from src.graph.connection import Neo4jConnection
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Prompts — loaded from src/prompts/*.md at import time
+# Agent config key — must match an entry under agents: in config/agents.yaml
 # ---------------------------------------------------------------------------
+_AGENT_NAME = "aml"
 
-_SYSTEM_PROMPT = load_prompt("aml").format(
+# ---------------------------------------------------------------------------
+# Prompts — loaded from src/prompts/aml_sys.md and aml_message.md
+# ---------------------------------------------------------------------------
+_SYSTEM_PROMPT = load_prompt(_AGENT_NAME).format(
     GRAPH_SCHEMA_HINT=GRAPH_SCHEMA_HINT,
     PATTERN_HINTS=PATTERN_HINTS,
-    AML_MAX_ITERATIONS=str(AML_MAX_ITERATIONS),
+    AML_MAX_ITERATIONS=14,
 )
 
-# User message template — rendered per-call inside run():
-#   load_message("aml").format(question=question)
-
-# ---------------------------------------------------------------------------
-# Agent
-# ---------------------------------------------------------------------------
 
 class AMLAgent:
-    """Single-agent AML investigator.
+    """
+    Single-agent AML investigator backed by H2OGPTe.
+
+    Sets up a collection, registers the custom FastMCP server as a tool,
+    creates a chat session, and runs the investigation via H2OGPTe's
+    agentic chat API.
 
     Usage:
-        agent = AMLAgent(execute_tool)
+        agent = AMLAgent()
         response = agent.run("Investigate entity ENT-0042 for structuring risk.")
     """
 
-    def __init__(self, execute_tool: Callable[[str, dict], dict]) -> None:
-        self._execute_tool = execute_tool
-        self._client = make_anthropic_client()
+    def __init__(self) -> None:
+        self._client = create_client()
+        self._config = get_agent_config(_AGENT_NAME)
+        self._collection_id: str | None = None
+        self._tool_ids: list | None = None
 
-    def run(self, question: str) -> "AMLRiskResponse":
+    def setup(self) -> None:
         """
-        Run the agentic investigation loop for the given question.
+        Create the H2OGPTe collection and register the MCP tool.
 
-        TODO: implement this method after completing:
-          - src/mcp/tools_impl.py  (traverse_entity_network, detect_graph_anomalies,
-                                    retrieve_typology_chunks, persist_case_finding,
-                                    trace_evidence, read-neo4j-cypher)
-          - src/mcp/tool_defs.py   (AML_TOOL_DEFS list)
-          - src/mcp/schema.py      (GRAPH_SCHEMA_HINT, ANOMALY_REGISTRY, AMLRiskResponse)
-          - src/graph/queries.py   (Cypher helpers for AML entity graph)
-
-        Implementation guide (mirror compliance_agent.py from loanguard-ai):
-          1. Pre-run traverse_entity_network for the entity, inject into messages
-             with cache_control=ephemeral.
-          2. Pre-run detect_graph_anomalies for entity-relevant patterns.
-          3. Enter the agentic loop (max AML_MAX_ITERATIONS):
-               a. Call Claude with system prompt + messages + AML_TOOL_DEFS.
-               b. On stop_reason=end_turn: parse structured output → return AMLRiskResponse.
-               c. On stop_reason=tool_use: execute each tool → guard_tool_result →
-                  truncate → append to messages → trim history → next iteration.
-          4. Parse verdict/risk_score/summary from Claude's final text block.
-          5. Return AMLRiskResponse.
+        Call once before run(). Idempotent — safe to call again if the
+        collection or tool registration already exists.
         """
-        # TODO: remove this placeholder once implemented
-        # Build the opening user message from the template:
-        #   messages = [{"role": "user", "content": _USER_PROMPT_TEMPLATE.format(question=question)}]
-        raise NotImplementedError(
-            "AMLAgent.run() is not yet implemented. "
-            "See the docstring above for the implementation guide."
+        self._collection_id = create_collection(
+            self._client,
+            collection_name="AML Guard",
+            collection_desc="AML investigation knowledge graph collection.",
+        )
+        self._tool_ids = register_mcp_tool(self._client)
+        logger.info(
+            "AMLAgent setup complete. collection=%s tools=%s",
+            self._collection_id,
+            self._tool_ids,
         )
 
-    def _parse_response(self, text: str, entity_id: str) -> "AMLRiskResponse":
+    def run(self, question: str) -> AMLRiskResponse:
         """
-        Parse Claude's structured output into an AMLRiskResponse.
+        Run a single AML investigation and return a structured risk response.
 
-        TODO: implement to extract VERDICT, RISK_SCORE, SUMMARY,
-              TRIGGERED_TYPOLOGIES, RECOMMENDED_ACTIONS from text.
+        Args:
+            question: Natural-language investigation request, e.g.
+                      "Investigate entity ENT-0042 for structuring risk."
+
+        Returns:
+            AMLRiskResponse with verdict, risk_score, findings, and evidence.
+        """
+        if self._collection_id is None:
+            raise RuntimeError("Call setup() before run().")
+
+        user_message = load_message(_AGENT_NAME).format(question=question)
+
+        chat_session_id = create_chat(self._client, self._collection_id)
+        logger.info("Chat session created: %s", chat_session_id)
+
+        with self._client.connect(chat_session_id) as session:
+            reply = session.query(
+                message=user_message,
+                system_prompt=_SYSTEM_PROMPT,
+                llm=self._config.get("llm"),
+                llm_args={
+                    "temperature": self._config.get("temperature", 0.0),
+                },
+                timeout=120,
+            )
+
+        logger.info("H2OGPTe reply received.")
+        return self._parse_response(reply.content)
+
+    def _parse_response(self, content: str) -> AMLRiskResponse:
+        """
+        Parse the H2OGPTe reply into an AMLRiskResponse.
+
+        TODO: extract VERDICT, RISK_SCORE, SUMMARY, TRIGGERED_TYPOLOGIES,
+              and RECOMMENDED_ACTIONS from the structured output text using
+              regex, then populate and return AMLRiskResponse.
         """
         raise NotImplementedError("_parse_response() not yet implemented.")
