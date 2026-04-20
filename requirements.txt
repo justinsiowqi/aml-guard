@@ -1,15 +1,12 @@
 # Core AI & Graph
-anthropic>=0.49.0
+h2ogpte==1.6.55
 neo4j>=5.18.0
 python-dotenv>=1.0.0
-
-# Embeddings (for Layer 2 typology RAG)
-openai>=1.30.0
 
 # Data loading
 pandas>=2.2.0
 
-# Layer 2 — typology document pipeline
+# Layer 2 — regulatory pipeline
 pdfplumber>=0.11.0
 pyyaml>=6.0.0
 
@@ -17,16 +14,16 @@ pyyaml>=6.0.0
 streamlit>=1.35.0
 plotly>=5.22.0
 
-# Notebooks
+# Notebook
 jupyter>=1.1.0
 jupyterlab>=4.0.0
 ipykernel>=6.29.0
 ipywidgets>=8.0.0
 
-# MCP
-fastmcp>=0.1.0
-mcp-neo4j-cypher
-mcp
+# 31x Investigation system — MCP
+fastmcp>=0.1.0          # FastMCP server framework (jlowin/fastmcp)
+mcp-neo4j-cypher        # Neo4j Labs MCP server (neo4j-contrib/mcp-neo4j)
+mcp                     # MCP Python client
 
 # Testing
 pytest>=8.0.0
