@@ -355,7 +355,7 @@ MATCH (c:Company)-[:REGISTERED_AT]->(a:Address)
 WITH a,
      count(DISTINCT c)             AS company_count,
      collect(DISTINCT c.name)[0..10] AS companies
-WHERE company_count BETWEEN 2 AND 8
+WHERE company_count >= 2 AND company_count <= 8
 RETURN a.node_id         AS address_id,
        a.address         AS address_text,
        company_count,
