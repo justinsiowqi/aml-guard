@@ -101,6 +101,8 @@ aml-guard/
 │   ├── 312_test_tools.ipynb
 │   ├── 313_agent_demo.ipynb
 │   └── 314_reset_layer3.ipynb
+├── scripts/
+│   └── load_layer1_entities.py  # CLI version of notebook 111
 ├── tests/
 ├── app.py                     # Streamlit chat UI
 └── requirements.txt
@@ -127,7 +129,13 @@ cp .env.example .env
 **3. Load data**
 
 - Place entity CSVs in `data/layer_1/entities/` and `data/layer_1/links/` (see `SCHEMA.md` in each directory)
-- Run `notebooks/111_load_layer1_entities.ipynb`
+- Run the loader script (or the equivalent notebook):
+
+```bash
+python scripts/load_layer1_entities.py
+# To wipe Layer 1 before reloading:
+python scripts/load_layer1_entities.py --reset
+```
 
 **4. Load typology documents**
 
