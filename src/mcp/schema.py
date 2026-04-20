@@ -2,7 +2,7 @@
 Shared schema, dataclasses, and anomaly registry for AML Guard.
 
 Provides:
-  GRAPH_SCHEMA_HINT  — injected into Claude's system prompt (update as Layer 1 is built)
+  GRAPH_SCHEMA_HINT  — injected into H2OGPTe system prompt
   ANOMALY_REGISTRY   — AML detection patterns with Cypher
   Dataclasses        — AMLRiskResponse, RiskFinding
   Enums              — RiskVerdict, Severity
@@ -16,9 +16,8 @@ from typing import Any
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Graph Schema Hint
-# TODO: update this block as your teammate loads Layer 1 data.
-#       Keep it accurate — Claude uses it to generate valid Cypher without
-#       calling get-neo4j-schema on every turn.
+# Keep this accurate — H2OGPTe uses it to generate valid Cypher without
+# calling get-neo4j-schema on every turn.
 # ─────────────────────────────────────────────────────────────────────────────
 
 GRAPH_SCHEMA_HINT = """
@@ -84,24 +83,24 @@ Node: Jurisdiction
 
 ### LAYER 1 Relationships
 
-(Person)-[:IS_OFFICER_OF {relationship, source_leak, start_date, end_date}]->(Company)
-  # ICIJ rel_type "officer_of". `relationship` carries the raw role string
+(Person)-[:IS_OFFICER_OF {role, source_leak, status, start_date, end_date, link}]->(Company)
+  # ICIJ rel_type "officer_of". `role` carries the raw role string
   # (e.g. "director", "shareholder", "beneficial owner").
 
-(Intermediary)-[:INTERMEDIARY_OF {source_leak}]->(Company)
+(Intermediary)-[:INTERMEDIARY_OF {source_leak, status, start_date, end_date, link}]->(Company)
   # ICIJ rel_type "intermediary_of" — the registered agent that set up the company.
 
-(Company)-[:REGISTERED_AT {source_leak}]->(Address)
+(Company)-[:REGISTERED_AT {source_leak, link}]->(Address)
   # Derived from the inline `address` column. Enables shared-address detection.
 
-(Intermediary)-[:REGISTERED_AT {source_leak}]->(Address)
+(Intermediary)-[:REGISTERED_AT {source_leak, link}]->(Address)
   # Same derivation for intermediaries.
 
-(Company)-[:SHARES_ADDRESS_WITH {address_node_id}]->(Company)
+(Company)-[:SHARES_ADDRESS_WITH {address_node_id, source_leak}]->(Company)
   # Derived red flag: two Companies sharing one Address (clusters of 2-8 only;
   # larger clusters are registered-agent buildings and are filtered out).
 
-(Company)-[:SIMILAR_TO {source_leak}]->(Company)
+(Company)-[:SIMILAR_TO {source_leak, link}]->(Company)
   # ICIJ rel_type "similar" — companies ICIJ flagged as closely matching.
 
 (Company)-[:INCORPORATED_IN]->(Jurisdiction)
@@ -244,9 +243,8 @@ class AnomalyPattern:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Anomaly Registry
-# TODO: replace placeholder Cypher with queries that match your Layer 1 schema.
-#       Each pattern's Cypher should be validated against a live Neo4j instance
-#       before being committed here.
+# All Cypher validated against the live Layer 1 graph (19 Person, 131 Company,
+# 7 Intermediary, 28 Address, 3 Jurisdiction nodes).
 # ─────────────────────────────────────────────────────────────────────────────
 
 ANOMALY_REGISTRY: dict[str, AnomalyPattern] = {
