@@ -63,9 +63,17 @@ export default function InvestigationTimeline({ steps }: { steps: InvestigationS
   );
 }
 
+const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "Asia/Singapore",
+});
+
 function formatTime(iso: string): string {
   try {
-    return new Date(iso).toISOString().substring(11, 19) + "Z";
+    return `${TIME_FMT.format(new Date(iso))} +08`;
   } catch {
     return iso;
   }

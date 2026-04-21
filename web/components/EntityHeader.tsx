@@ -10,21 +10,22 @@ export default function EntityHeader({
 }) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-text-muted">
-        <span>Subject</span>
-        <span>·</span>
-        <span>{caseId}</span>
+      <div className="flex items-start justify-between gap-4">
+        <h2 className="font-display text-4xl leading-tight text-text sm:text-5xl">
+          {subject.name}
+        </h2>
+        <code className="mt-2 shrink-0 rounded-sm bg-surface-alt px-2 py-1 font-mono text-[11px] text-text-muted">
+          {caseId}
+        </code>
       </div>
-      <h2 className="font-display text-4xl leading-tight text-text sm:text-5xl">
-        {subject.name}
-      </h2>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
         <Chip icon={Building2} label={subject.type} />
         <Chip icon={MapPin} label={subject.jurisdiction} tone="danger" />
         <Chip icon={Briefcase} label="Mossack Fonseca (historic)" tone="warning" />
-        <span className="text-text-muted">·</span>
-        <span className="text-text-muted">{subject.profile_snippet}</span>
       </div>
+      <p className="mt-3 max-w-3xl text-[13.5px] leading-relaxed text-text/80">
+        {subject.profile_snippet}
+      </p>
     </div>
   );
 }

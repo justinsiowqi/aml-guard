@@ -58,13 +58,7 @@ export default function InvestigatePage() {
 
   return (
     <div className="mx-auto w-full max-w-canvas px-6 py-8 sm:px-10 sm:py-12">
-      {compact ? (
-        <header className="mb-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-text-muted">
-            AML Guard · Investigation
-          </div>
-        </header>
-      ) : (
+      {!compact && (
         <header className="mb-10">
           <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-text-muted">
             AML Guard · Investigation
@@ -78,6 +72,7 @@ export default function InvestigatePage() {
           </p>
         </header>
       )}
+
 
       <QuestionBar
         onSubmit={handleSubmit}

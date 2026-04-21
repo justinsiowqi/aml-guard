@@ -50,17 +50,17 @@ export default function InvestigationStream({
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3">
-        <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
-          Sub-agents · parallel
-        </div>
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="font-display text-sm text-text-muted">Agent run</h3>
         {!empty && !allDone && (
-          <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+          <div className="flex items-center gap-2 rounded-sm bg-surface-alt px-2 py-0.5 text-[11px] text-text-muted">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
             </span>
-            {doneCount}/{steps.length} complete
+            <span className="tabular font-mono">
+              {doneCount} / {steps.length} complete
+            </span>
           </div>
         )}
         {completed && (
@@ -68,7 +68,7 @@ export default function InvestigationStream({
             initial={{ opacity: 0, y: -2 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: "easeOut" }}
-            className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-success"
+            className="flex items-center gap-1.5 rounded-sm bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success"
           >
             <Check size={12} strokeWidth={2.25} />
             agent completed
@@ -150,10 +150,17 @@ function StatusBadge({ done, timestamp }: { done: boolean; timestamp: string }) 
   );
 }
 
+const TIME_FMT = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "Asia/Singapore",
+});
+
 function formatTime(iso: string): string {
   try {
-    const d = new Date(iso);
-    return d.toISOString().substring(11, 19) + "Z";
+    return `${TIME_FMT.format(new Date(iso))} +08`;
   } catch {
     return iso;
   }
