@@ -4,5 +4,6 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/
 .DS_Store
+.vscode/
 data/layer_2/regulatory_documents/*.pdf
 src/mcp/*.zip
