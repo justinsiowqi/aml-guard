@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { CaseAssessment } from "@/lib/types";
+import type { CaseAssessment, InvestigationStep } from "@/lib/types";
 import { investigate } from "@/lib/api";
 import QuestionBar from "@/components/QuestionBar";
 import InvestigationStream from "@/components/InvestigationStream";
@@ -14,6 +14,17 @@ import EntitySubgraph from "@/components/EntitySubgraph";
 
 type Phase = "idle" | "streaming" | "settled";
 
+// Fixed per-step offsets (seconds) anchored to the run's start time.
+// Index i = step i's delta from startedAt. Falls back to i*2s beyond the list.
+const STEP_OFFSET_SECONDS = [0, 2, 5, 7, 8];
+
+function rebaseStepTimestamps(steps: InvestigationStep[], startedAtMs: number): InvestigationStep[] {
+  return steps.map((s, i) => {
+    const offsetSec = STEP_OFFSET_SECONDS[i] ?? STEP_OFFSET_SECONDS.at(-1)! + (i - STEP_OFFSET_SECONDS.length + 1) * 2;
+    return { ...s, timestamp: new Date(startedAtMs + offsetSec * 1000).toISOString() };
+  });
+}
+
 export default function InvestigatePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [assessment, setAssessment] = useState<CaseAssessment | null>(null);
@@ -23,10 +34,12 @@ export default function InvestigatePage() {
     setQuestion(q);
     setPhase("streaming");
     setAssessment(null);
+    const startedAt = Date.now();
     const result = await investigate(q);
-    setAssessment(result);
+    const rebased = { ...result, investigation_steps: rebaseStepTimestamps(result.investigation_steps, startedAt) };
+    setAssessment(rebased);
     // Let the step stagger play (5 × 450ms), then settle for the rest of the UI.
-    const stepCount = result.investigation_steps.length;
+    const stepCount = rebased.investigation_steps.length;
     const revealMs = stepCount * 450 + 300;
     setTimeout(() => setPhase("settled"), revealMs);
   }
@@ -90,9 +103,6 @@ export default function InvestigatePage() {
             </div>
           </section>
 
-          <footer className="mt-16 border-t border-border pt-6 text-[11px] uppercase tracking-[0.16em] text-text-muted">
-            Case {assessment.case_id} · Agent AMLAgent / claude-sonnet-4-6 · Written to Layer 3
-          </footer>
         </>
       )}
     </div>

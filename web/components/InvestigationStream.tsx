@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Network, ScanSearch, BookOpenCheck, Database, ReceiptText } from "lucide-react";
+import { Network, ScanSearch, BookOpenCheck, Database, ReceiptText, Check } from "lucide-react";
 import type { InvestigationStep, ToolName } from "@/lib/types";
 
 const TOOL_META: Record<ToolName, { label: string; icon: typeof Network; tint: string }> = {
@@ -20,6 +20,7 @@ export default function InvestigationStream({
   isStreaming: boolean;
 }) {
   const empty = steps.length === 0;
+  const completed = !isStreaming && !empty;
 
   return (
     <div>
@@ -35,6 +36,17 @@ export default function InvestigationStream({
             </span>
             investigating…
           </div>
+        )}
+        {completed && (
+          <motion.div
+            initial={{ opacity: 0, y: -2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-success"
+          >
+            <Check size={12} strokeWidth={2.25} />
+            agent completed
+          </motion.div>
         )}
       </div>
 
