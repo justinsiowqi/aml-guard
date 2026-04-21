@@ -53,6 +53,30 @@ mcp = FastMCP("aml-guard")
 
 
 @mcp.tool()
+def check_env_var() -> str:
+    """
+    Health check for required secrets. Verifies that Neo4j and H2OGPTe
+    credentials are injected into the MCP runtime. Call this first if other
+    tools are returning authentication or connection errors.
+    """
+    required = [
+        "NEO4J_URI",
+        "NEO4J_USERNAME",
+        "NEO4J_PASSWORD",
+        "H2OGPTE_API_KEY",
+    ]
+    missing = [name for name in required if not os.environ.get(name)]
+
+    # H2OGPTe URL can come from either var name
+    if not (os.environ.get("H2OGPTE_ADDRESS") or os.environ.get("H2OGPTE_URL")):
+        missing.append("H2OGPTE_ADDRESS (or H2OGPTE_URL)")
+
+    if missing:
+        return f"FAILURE: Missing environment variables: {', '.join(missing)}"
+    return "SUCCESS: All required environment variables are set (NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, H2OGPTE_API_KEY, H2OGPTE_ADDRESS)."
+
+
+@mcp.tool()
 def traverse_entity_network_tool(
     entity_id: str,
     entity_type: str,
