@@ -47,7 +47,7 @@ export default function QuestionBar({
         <button
           type="submit"
           disabled={disabled || !value.trim()}
-          className="flex h-9 items-center gap-2 rounded bg-gradient-to-br from-primary to-primary-container px-4 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          className="flex h-9 items-center gap-2 rounded bg-[#1e40af] px-4 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           Investigate
           <ArrowRight size={14} strokeWidth={2} />

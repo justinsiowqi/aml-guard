@@ -26,7 +26,7 @@ export default function Rail() {
 
       <button
         type="button"
-        className="mb-6 flex w-full items-center justify-center gap-2 rounded bg-gradient-to-br from-primary to-primary-container px-4 py-2 font-medium text-white transition-opacity hover:opacity-90"
+        className="mb-6 flex w-full items-center justify-center gap-2 rounded bg-[#1e40af] px-4 py-2 font-medium text-white transition-opacity hover:opacity-90"
       >
         <Plus size={18} strokeWidth={2} />
         New Investigation

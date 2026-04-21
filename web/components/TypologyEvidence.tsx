@@ -58,7 +58,7 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
   const next = () => setIdx((i) => Math.min(sorted.length - 1, i + 1));
 
   return (
-    <div className="flex h-full flex-col rounded border border-outline-variant/30 bg-surface-container p-5">
+    <div className="flex h-full flex-col rounded border border-outline-variant/30 bg-[#e4e5e6] p-5">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BookOpen size={16} strokeWidth={1.75} className="text-tertiary-container" />
@@ -66,7 +66,7 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
             Citation Viewer
           </span>
         </div>
-        <span className="rounded-sm bg-surface-container-highest px-1.5 py-0.5 font-mono text-[10px] text-on-surface-variant">
+        <span className="rounded border border-[#a8aaac]/40 bg-[#c4c6c8] px-2 py-1 font-mono text-[10px] font-bold tracking-wider text-on-surface">
           REF: {active.id.toUpperCase()}
         </span>
       </div>
@@ -81,11 +81,19 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
         <div className="mt-0.5 text-xs text-on-surface-variant">{active.title}</div>
       </div>
 
-      <div className="relative flex-1 overflow-hidden rounded border border-outline-variant/20 bg-surface-container-lowest p-4">
-        <div className="absolute left-0 top-0 h-full w-1 bg-tertiary-container" />
-        <p className="font-serif text-sm italic leading-relaxed text-on-surface">
-          &ldquo;{highlight(active.text)}&rdquo;
-        </p>
+      <div className="relative flex-1 overflow-hidden rounded border border-outline-variant/20 bg-white shadow-sm">
+        <div className="h-1 w-full bg-tertiary-container" />
+        <div className="relative p-5">
+          <div className="absolute left-0 top-0 h-full w-1 bg-tertiary-container" />
+          <p className="font-serif text-sm italic leading-relaxed text-on-surface">
+            {highlight(active.text)}
+          </p>
+        </div>
+        <div className="h-px w-full bg-outline-variant/30" />
+        <div className="flex items-center justify-between px-5 py-2 text-[10px] font-mono text-on-surface-variant">
+          <span>{active.source}</span>
+          <span>{active.section}</span>
+        </div>
       </div>
 
       {sorted.length > 1 && (

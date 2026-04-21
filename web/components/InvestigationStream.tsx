@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import type { InvestigationStep, ToolName } from "@/lib/types";
 
 type Tone = "primary" | "error";
@@ -42,6 +43,16 @@ export default function InvestigationStream({
   isStreaming: boolean;
 }) {
   const [revealedCount, setRevealedCount] = useState(0);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggleExpanded = (i: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
 
   useEffect(() => {
     setRevealedCount(0);
@@ -59,8 +70,8 @@ export default function InvestigationStream({
   const visible = isStreaming ? steps.slice(0, revealedCount) : steps;
 
   return (
-    <div className="h-full rounded bg-surface-container-low p-6">
-      <div className="mb-4 flex items-center justify-between border-b border-outline-variant/20 pb-2">
+    <div className="flex h-full max-h-[380px] flex-col rounded bg-[#edeeef] p-6">
+      <div className="mb-4 flex shrink-0 items-center justify-between border-b border-outline-variant/20 pb-2">
         <h3 className="text-sm font-bold uppercase tracking-wider text-on-surface">
           Investigation Stream
         </h3>
@@ -80,12 +91,13 @@ export default function InvestigationStream({
           Reading graph schema, preparing Cypher…
         </div>
       ) : (
-        <ol className="relative space-y-6 pl-4">
-          <div className="absolute bottom-2 left-1.5 top-2 w-px bg-outline-variant/30" />
+        <ol className="relative flex-1 space-y-6 overflow-y-auto pl-6 pr-4 [scrollbar-gutter:stable]">
+          <div className="absolute bottom-2 left-3 top-2 w-px bg-outline-variant/30" />
           <AnimatePresence initial={false}>
             {visible.map((step, i) => {
               const tone = TOOL_TONE[step.tool] ?? "primary";
               const title = TOOL_TITLE[step.tool] ?? step.tool;
+              const isExpanded = expanded.has(i);
               return (
                 <motion.li
                   key={`${step.tool}-${i}`}
@@ -95,28 +107,24 @@ export default function InvestigationStream({
                   className="relative"
                 >
                   <div
-                    className={`absolute -left-[18px] top-0 h-3 w-3 rounded-full ring-4 ring-surface-container-low ${DOT_TONE[tone]}`}
+                    className={`absolute -left-[18px] top-0 h-3 w-3 rounded-full ring-4 ring-[#edeeef] ${DOT_TONE[tone]}`}
                   />
                   <div className="mb-1 font-mono text-xs text-on-surface-variant">
                     {formatTime(step.timestamp)}
                   </div>
                   <div className={`text-sm font-bold ${TITLE_TONE[tone]}`}>{title}</div>
-                  <div className="mt-1 text-xs text-on-surface-variant">{step.summary}</div>
-                  {step.cited_chunks && step.cited_chunks.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px]">
-                      <span className="uppercase tracking-[0.14em] text-on-surface-variant">
-                        cites
-                      </span>
-                      {step.cited_chunks.map((id) => (
-                        <code
-                          key={id}
-                          className="rounded-sm bg-surface-container px-1.5 py-0.5 font-mono text-[10px] text-on-surface"
-                        >
-                          {id}
-                        </code>
-                      ))}
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(i)}
+                    className="mt-1 flex w-full items-start gap-1 text-left text-xs text-on-surface-variant transition-colors hover:text-on-surface"
+                  >
+                    <span className={isExpanded ? "" : "line-clamp-2"}>{step.summary}</span>
+                    <ChevronDown
+                      size={14}
+                      strokeWidth={2}
+                      className={`mt-0.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    />
+                  </button>
                 </motion.li>
               );
             })}

@@ -4,10 +4,10 @@ import { FileSearch, Filter } from "lucide-react";
 const SEV_ORDER: Record<Severity, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3 };
 
 const SEV_PILL: Record<Severity, { label: string; classes: string }> = {
-  HIGH:   { label: "Critical", classes: "bg-error-container text-on-error-container" },
-  MEDIUM: { label: "High",     classes: "bg-secondary-fixed text-on-secondary-fixed" },
-  LOW:    { label: "Moderate", classes: "bg-primary-fixed text-on-primary-fixed" },
-  INFO:   { label: "Info",     classes: "bg-surface-container-highest text-on-surface-variant" },
+  HIGH:   { label: "Critical", classes: "bg-[#ba1a1a] text-white" },
+  MEDIUM: { label: "High",     classes: "bg-[#872d00] text-white" },
+  LOW:    { label: "Moderate", classes: "bg-[#00288e] text-white" },
+  INFO:   { label: "Info",     classes: "bg-[#757684] text-white" },
 };
 
 function patternCode(name: string): string {
@@ -16,6 +16,13 @@ function patternCode(name: string): string {
     .map((w) => w.slice(0, 3).toUpperCase())
     .slice(0, 2)
     .join("-");
+}
+
+function titleCase(name: string): string {
+  return name
+    .split("_")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
 }
 
 export default function FindingsList({ findings }: { findings: Finding[] }) {
@@ -31,7 +38,7 @@ export default function FindingsList({ findings }: { findings: Finding[] }) {
         </h3>
         <button
           type="button"
-          className="flex items-center gap-1 text-xs font-bold text-primary-container transition-opacity hover:opacity-70"
+          className="flex items-center gap-1 text-xs font-bold text-[#1e40af] transition-opacity hover:opacity-70"
         >
           <Filter size={14} strokeWidth={2} />
           Filter
@@ -46,7 +53,7 @@ export default function FindingsList({ findings }: { findings: Finding[] }) {
               <th className="p-3">Description</th>
               <th className="w-24 p-3">Severity</th>
               <th className="w-20 p-3 text-right">Score</th>
-              <th className="w-24 p-3 text-right">Evidence</th>
+              <th className="w-24 p-3 text-center">Evidence</th>
             </tr>
           </thead>
           <tbody className="text-sm">
@@ -61,7 +68,7 @@ export default function FindingsList({ findings }: { findings: Finding[] }) {
                     {patternCode(f.pattern_name)}
                   </td>
                   <td className="p-3 font-medium text-on-surface">
-                    <div>{f.pattern_name.replace(/_/g, " ")}</div>
+                    <div>{titleCase(f.pattern_name)}</div>
                     <div className="mt-1 line-clamp-2 text-xs text-on-surface-variant">
                       {f.description}
                     </div>
@@ -74,11 +81,11 @@ export default function FindingsList({ findings }: { findings: Finding[] }) {
                     </span>
                   </td>
                   <td className="p-3 text-right font-mono text-xs">{(f.score / 10).toFixed(2)}</td>
-                  <td className="p-3 text-right">
+                  <td className="p-3 text-center">
                     <button
                       type="button"
                       aria-label={`View evidence for ${f.pattern_name}`}
-                      className="text-primary-container transition-opacity hover:opacity-70"
+                      className="text-[#1e40af] transition-opacity hover:opacity-70"
                     >
                       <FileSearch size={18} strokeWidth={1.75} />
                     </button>

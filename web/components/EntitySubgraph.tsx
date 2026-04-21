@@ -30,8 +30,8 @@ export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment[
   const W = 420;
   const H = 230;
 
-  const focusEdge = subgraph.edges[0];
-  const focusTarget = subgraph.nodes.find((n) => n.id === focusEdge?.target);
+  const focusEdge = subgraph.edges.find((e) => e.kind.includes("WIRE")) ?? subgraph.edges[0];
+  const focusCounterparty = subgraph.nodes.find((n) => n.id === focusEdge?.source);
 
   return (
     <div className="relative w-full rounded border border-surface-container bg-surface-container-lowest p-6">
@@ -53,8 +53,13 @@ export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment[
         </div>
       </div>
 
-      <div className="relative overflow-hidden rounded border border-outline-variant/20 bg-surface-container-low/30">
-        <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-12 flex h-72 items-center justify-center overflow-hidden rounded border border-outline-variant/20 bg-surface-container-low/30 lg:col-span-8">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="h-full w-full"
+        >
           <defs>
             <marker
               id="arrow"
@@ -147,21 +152,24 @@ export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment[
             );
           })}
         </svg>
+        </div>
 
-        {focusTarget && (
-          <div className="absolute bottom-4 right-4 w-64 rounded border border-outline-variant/30 bg-surface-container-lowest p-3 shadow-[0_12px_32px_rgba(25,28,29,0.06)]">
+        {focusCounterparty && (
+          <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
             <div className="mb-2 border-b border-surface-container-high pb-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
               Connection Focus
             </div>
-            <div className="mb-1 flex items-baseline justify-between">
-              <span className="text-xs font-semibold text-on-surface">{focusTarget.label}</span>
-              <span className="font-mono text-[10px] text-error">R-0.89</span>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-[#191c1d]">
+                {focusCounterparty.label}
+              </span>
+              <span className="shrink-0 font-mono text-[11px] text-[#ba1a1a]">Risk: 0.89</span>
             </div>
-            <div className="mb-2 text-xs text-on-surface-variant">
-              {focusEdge?.kind.replace(/_/g, " ").toLowerCase()}
+            <div className="mb-3 text-xs text-[#444653]">
+              Directional flow: <span className="font-medium text-[#191c1d]">Outbound</span>
             </div>
-            <div className="font-mono text-sm font-bold text-on-surface">SGD 1,976,600</div>
-            <div className="mt-1 text-[10px] italic text-on-surface-variant">
+            <div className="font-mono text-base font-bold text-[#191c1d]">SGD 1,976,600</div>
+            <div className="mt-1 text-[11px] italic text-[#444653]">
               Via 4 successive wire transfers.
             </div>
           </div>
