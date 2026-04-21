@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { CaseAssessment, InvestigationStep } from "@/lib/types";
 import { investigate } from "@/lib/api";
 import QuestionBar from "@/components/QuestionBar";
@@ -17,6 +17,7 @@ type Phase = "idle" | "streaming" | "settled";
 // Fixed per-step offsets (seconds) anchored to the run's start time.
 // Index i = step i's delta from startedAt. Falls back to i*2s beyond the list.
 const STEP_OFFSET_SECONDS = [0, 2, 5, 7, 8];
+const SETTLE_BUFFER_MS = 500;
 
 function rebaseStepTimestamps(steps: InvestigationStep[], startedAtMs: number): InvestigationStep[] {
   return steps.map((s, i) => {
@@ -29,6 +30,7 @@ export default function InvestigatePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [assessment, setAssessment] = useState<CaseAssessment | null>(null);
   const [question, setQuestion] = useState<string>("");
+  const subjectRef = useRef<HTMLDivElement | null>(null);
 
   async function handleSubmit(q: string) {
     setQuestion(q);
@@ -38,33 +40,62 @@ export default function InvestigatePage() {
     const result = await investigate(q);
     const rebased = { ...result, investigation_steps: rebaseStepTimestamps(result.investigation_steps, startedAt) };
     setAssessment(rebased);
-    // Let the step stagger play (5 × 450ms), then settle for the rest of the UI.
-    const stepCount = rebased.investigation_steps.length;
-    const revealMs = stepCount * 450 + 300;
+
+    // Scroll focus to the subject once it's rendered.
+    setTimeout(() => {
+      subjectRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+
+    // Wait for the last agent card to flip done, then reveal the rest.
+    const lastTsMs = rebased.investigation_steps.length
+      ? new Date(rebased.investigation_steps[rebased.investigation_steps.length - 1].timestamp).getTime()
+      : startedAt;
+    const revealMs = Math.max(800, lastTsMs - Date.now()) + SETTLE_BUFFER_MS;
     setTimeout(() => setPhase("settled"), revealMs);
   }
 
+  const compact = phase !== "idle";
+
   return (
     <div className="mx-auto w-full max-w-canvas px-6 py-8 sm:px-10 sm:py-12">
-      <header className="mb-10">
-        <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-text-muted">
-          AML Guard · Investigation
-        </div>
-        <h1 className="font-display text-4xl leading-tight text-text sm:text-5xl">
-          Follow the money. Cite the rule.
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-text-muted">
-          An agent traverses the entity graph, runs six anomaly patterns, and matches behaviour
-          to MAS Notice 626, FATF, and AUSTRAC typologies — returning a verdict with cited evidence.
-        </p>
-      </header>
+      {compact ? (
+        <header className="mb-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-text-muted">
+            AML Guard · Investigation
+          </div>
+        </header>
+      ) : (
+        <header className="mb-10">
+          <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+            AML Guard · Investigation
+          </div>
+          <h1 className="font-display text-4xl leading-tight text-text sm:text-5xl">
+            Follow the money. Cite the rule.
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-text-muted">
+            An agent traverses the entity graph, runs six anomaly patterns, and matches behaviour
+            to MAS Notice 626, FATF, and AUSTRAC typologies — returning a verdict with cited evidence.
+          </p>
+        </header>
+      )}
 
-      <QuestionBar onSubmit={handleSubmit} disabled={phase === "streaming"} currentQuestion={question} />
+      <QuestionBar
+        onSubmit={handleSubmit}
+        disabled={phase === "streaming"}
+        currentQuestion={question}
+        compact={compact}
+      />
 
-      {phase !== "idle" && (
-        <section className="mt-10">
+      {compact && assessment && (
+        <section ref={subjectRef} className="mt-10 scroll-mt-6">
+          <EntityHeader subject={assessment.subject} caseId={assessment.case_id} />
+        </section>
+      )}
+
+      {compact && assessment && (
+        <section className="mt-8">
           <InvestigationStream
-            steps={assessment?.investigation_steps ?? []}
+            steps={assessment.investigation_steps}
             isStreaming={phase === "streaming"}
           />
         </section>
@@ -72,10 +103,6 @@ export default function InvestigatePage() {
 
       {assessment && phase === "settled" && (
         <>
-          <section className="mt-12">
-            <EntityHeader subject={assessment.subject} caseId={assessment.case_id} />
-          </section>
-
           <section className="mt-6">
             <VerdictBanner
               verdict={assessment.verdict}
@@ -102,7 +129,6 @@ export default function InvestigatePage() {
               <EntitySubgraph subgraph={assessment.subgraph} />
             </div>
           </section>
-
         </>
       )}
     </div>
