@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 
-import anthropic
-
 MODEL_MAIN = "claude-sonnet-4-6"
 MODEL_FAST = "claude-haiku-4-5-20251001"
 MODEL      = MODEL_MAIN
