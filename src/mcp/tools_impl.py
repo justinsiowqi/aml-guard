@@ -1,12 +1,4 @@
-"""
-Plain Python implementations of all AML Guard tools.
-
-Each function is called by dispatcher.py and maps 1:1 to a tool in tool_defs.py.
-Functions receive a shared Neo4jConnection (conn) so they don't open their own.
-
-TODO: implement each function below. The docstrings describe the expected
-      inputs, outputs, and which queries.py helper to call.
-"""
+"""Plain Python implementations of all AML Guard MCP tools."""
 
 from __future__ import annotations
 

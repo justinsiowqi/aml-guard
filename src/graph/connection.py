@@ -1,4 +1,4 @@
-"""Neo4j AuraDB connection manager. Copied verbatim from loanguard-ai."""
+"""Neo4j AuraDB connection manager."""
 
 import os
 import logging

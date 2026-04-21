@@ -126,7 +126,7 @@ Node: Section
               paragraph_count (int),
               word_count (int)
 
-Node: Requirement   # paragraph-level; equivalent to LoanGuard's "requirement"
+Node: Requirement   # paragraph-level obligation extracted from the regulation
   Properties: requirement_id (str, unique),  # "MAS-626-6.3"
               section_id (str),
               paragraph (str),               # "6.3"

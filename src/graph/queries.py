@@ -4,12 +4,8 @@ Parameterised Cypher helpers for the AML Guard graph.
 Organised by layer:
   Layer 1 — entity graph lookups (entities + relationships)
   Layer 2 — typology document traversal (Regulation → Section → Chunk)
-  Layer 3 — case assessment operations (write + read)
 
-TODO: implement each function once your teammate has finalised the data model
-      and loaded Layer 1. Use the schema in src/mcp/schema.py as the reference.
-
-Cypher best practices (carry over from loanguard-ai):
+Cypher best practices:
   - Always use parameterised queries ($param) — never f-string interpolation.
   - For variable-length paths use size(r) not length(r).
   - Collect rel types with [rel IN r | type(rel)].
@@ -100,7 +96,7 @@ def get_entity_network(
         MATCH (start)
         WHERE (start.node_id = $entity_id OR start.name = $entity_id)
           AND any(lbl IN labels(start) WHERE lbl IN ['Person','Company','Intermediary'])
-        MATCH path = (start)-[r:IS_OFFICER_OF|INTERMEDIARY_OF|SHARES_ADDRESS_WITH|INCORPORATED_IN*1..2]->(connected)
+        MATCH path = (start)-[r:IS_OFFICER_OF|INTERMEDIARY_OF|SHARES_ADDRESS_WITH|INCORPORATED_IN*1..2]-(connected)
         RETURN
             start.node_id                          AS origin_id,
             labels(start)[0]                       AS origin_type,
@@ -119,15 +115,17 @@ def get_entity_network(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_typology_path(
-    conn: "Neo4jConnection", entity_id: str, typology_id: str
+    conn: "Neo4jConnection", typology_id: str
 ) -> list[dict]:
     """
     Return the full Regulation → Section → Requirement hierarchy for a regulation,
     optionally filtered to sections relevant to the entity's jurisdiction or risk profile.
     """
+    # AML-relevant sections: 4 (risk assessment), 6 (CDD), 7 (EDD), 8 (beneficial ownership), 11 (record keeping)
     return conn.run_query("""
         MATCH (reg:Regulation {regulation_id: $typology_id})
         MATCH (reg)-[:HAS_SECTION]->(s:Section)
+        WHERE s.section_number IN $aml_sections
         MATCH (s)-[:HAS_REQUIREMENT]->(req:Requirement)
         OPTIONAL MATCH (req)-[:DEFINES_THRESHOLD]->(t:Threshold)
         RETURN
@@ -148,7 +146,10 @@ def get_typology_path(
                 threshold_type: t.threshold_type
             })                  AS thresholds
         ORDER BY s.section_number, req.paragraph
-    """, {"typology_id": typology_id, "entity_id": entity_id})
+    """, {
+        "typology_id":  typology_id,
+        "aml_sections": ["4", "6", "7", "8", "11"],
+    })
 
 
 def vector_search_typology_chunks(

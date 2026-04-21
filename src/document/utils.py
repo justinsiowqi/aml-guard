@@ -1,4 +1,4 @@
-"""Shared utilities for the Layer 2 typology extraction pipeline. Copied verbatim from loanguard-ai."""
+"""Shared utilities for the Layer 2 typology extraction pipeline."""
 
 import json
 import time

@@ -1,4 +1,4 @@
-"""Prompt injection defence for agent tool result handling. Copied verbatim from loanguard-ai."""
+"""Prompt injection defence for agent tool result handling."""
 
 from __future__ import annotations
 

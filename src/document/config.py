@@ -1,4 +1,4 @@
-"""Document config loader for the Layer 2 typology pipeline. Copied verbatim from loanguard-ai."""
+"""Document config loader for the Layer 2 typology pipeline."""
 
 from pathlib import Path
 import yaml

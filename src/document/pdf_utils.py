@@ -1,4 +1,4 @@
-"""PDF text extraction utilities. Copied verbatim from loanguard-ai."""
+"""PDF text extraction utilities."""
 
 from pathlib import Path
 import pdfplumber
