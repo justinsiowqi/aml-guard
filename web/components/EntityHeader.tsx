@@ -1,5 +1,5 @@
 import type { CaseAssessment } from "@/lib/types";
-import { Building2, MapPin, Briefcase } from "lucide-react";
+import { Building2, MapPin, Briefcase, FileText } from "lucide-react";
 
 export default function EntityHeader({
   subject,
@@ -23,9 +23,12 @@ export default function EntityHeader({
         <Chip icon={MapPin} label={subject.jurisdiction} tone="danger" />
         <Chip icon={Briefcase} label="Mossack Fonseca (historic)" tone="warning" />
       </div>
-      <p className="mt-3 max-w-3xl text-[13.5px] leading-relaxed text-text/80">
-        {subject.profile_snippet}
-      </p>
+      <div className="mt-4 flex max-w-[72ch] items-start gap-2.5 rounded-md border border-border/70 bg-surface-alt/60 px-3.5 py-2.5">
+        <FileText size={13} strokeWidth={1.75} className="mt-[3px] shrink-0 text-text-muted" />
+        <p className="text-pretty text-[13px] leading-relaxed text-text/80">
+          {subject.profile_snippet}
+        </p>
+      </div>
     </div>
   );
 }

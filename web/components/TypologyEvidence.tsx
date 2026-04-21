@@ -7,14 +7,27 @@ const SOURCE_TONE: Record<string, string> = {
   AUSTRAC: "bg-warning/10 text-warning border-warning/20",
 };
 
+const SOURCE_SHORT: Record<string, string> = {
+  "MAS Notice 626": "MAS 626",
+  FATF: "FATF",
+  AUSTRAC: "AUSTRAC",
+};
+
 export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }) {
+  const uniqueSources = Array.from(
+    new Set(chunks.map((c) => SOURCE_SHORT[c.source] ?? c.source))
+  );
+
   return (
     <div>
-      <div className="mb-3 flex items-baseline justify-between">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="font-display text-2xl text-text">Typology evidence</h3>
-        <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
-          {chunks.length} cited
-        </span>
+        <div className="text-[12px] text-text-muted">
+          <span className="tabular font-mono">{chunks.length} passages</span>
+          {uniqueSources.length > 0 && (
+            <span> · {uniqueSources.join(", ")}</span>
+          )}
+        </div>
       </div>
       <ul className="space-y-3">
         {chunks.map((c) => {

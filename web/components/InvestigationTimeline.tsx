@@ -12,15 +12,10 @@ const TOOL_ICON: Record<ToolName, typeof Network> = {
 export default function InvestigationTimeline({ steps }: { steps: InvestigationStep[] }) {
   return (
     <div>
-      <div className="mb-3 flex items-baseline justify-between">
-        <div className="flex items-baseline gap-3">
-          <h3 className="font-display text-2xl text-text">Audit trail</h3>
-          <span className="rounded-sm bg-surface-alt px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-text-muted">
-            {steps.length} steps
-          </span>
-        </div>
-        <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
-          Cypher + citations
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h3 className="font-display text-2xl text-text">Audit trail</h3>
+        <span className="tabular font-mono text-[12px] text-text-muted">
+          {steps.length} steps
         </span>
       </div>
       <ol className="relative ml-3 space-y-3 border-l border-dashed border-border pl-6">

@@ -37,10 +37,10 @@ export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment[
 
   return (
     <div>
-      <div className="mb-3 flex items-baseline justify-between">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="font-display text-2xl text-text">Entity subgraph</h3>
-        <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
-          {subgraph.nodes.length} nodes · {subgraph.edges.length} edges
+        <span className="tabular font-mono text-[12px] text-text-muted">
+          {subgraph.nodes.length} entities · {subgraph.edges.length} relations
         </span>
       </div>
       <div className="rounded-md border border-border bg-surface p-3">

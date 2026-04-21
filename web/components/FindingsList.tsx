@@ -11,14 +11,28 @@ const SEV_TONE: Record<Severity, { border: string; label: string; chipBg: string
 
 export default function FindingsList({ findings }: { findings: Finding[] }) {
   const sorted = [...findings].sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || b.score - a.score);
+  const counts = findings.reduce((acc, f) => {
+    acc[f.severity] = (acc[f.severity] ?? 0) + 1;
+    return acc;
+  }, {} as Partial<Record<Severity, number>>);
 
   return (
     <div>
-      <div className="mb-3 flex items-baseline justify-between">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="font-display text-2xl text-text">Findings</h3>
-        <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
-          {findings.length} flagged
-        </span>
+        <div className="flex items-center gap-1.5 text-[12px] text-text-muted">
+          <span className="tabular font-mono">{findings.length} findings</span>
+          {(["HIGH", "MEDIUM", "LOW", "INFO"] as Severity[]).map((sev) =>
+            counts[sev] ? (
+              <span
+                key={sev}
+                className={`rounded-sm px-1.5 py-0.5 text-[10px] font-semibold ${SEV_TONE[sev].chipBg} ${SEV_TONE[sev].chipText}`}
+              >
+                {counts[sev]} {sev}
+              </span>
+            ) : null
+          )}
+        </div>
       </div>
       <ol className="space-y-3">
         {sorted.map((f) => {
