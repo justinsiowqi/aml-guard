@@ -60,24 +60,16 @@ def _dispatch(tool_name: str, tool_input: dict, conn: "Neo4jConnection") -> dict
     #       return traverse_entity_network(**tool_input, conn=conn)
 
     if tool_name == "traverse_entity_network":
-        # TODO: implement in src/mcp/tools_impl.py
-        return {"error": "traverse_entity_network not yet implemented."}
+        from src.mcp.tools_impl import traverse_entity_network
+        return traverse_entity_network(**tool_input, conn=conn)
 
     elif tool_name == "detect_graph_anomalies":
-        # TODO: implement in src/mcp/tools_impl.py
-        return {"error": "detect_graph_anomalies not yet implemented."}
+        from src.mcp.tools_impl import detect_graph_anomalies
+        return detect_graph_anomalies(**tool_input, conn=conn)
 
     elif tool_name == "retrieve_typology_chunks":
-        # TODO: implement in src/mcp/tools_impl.py
-        return {"error": "retrieve_typology_chunks not yet implemented."}
-
-    elif tool_name == "persist_case_finding":
-        # TODO: implement in src/mcp/tools_impl.py
-        return {"error": "persist_case_finding not yet implemented."}
-
-    elif tool_name == "trace_evidence":
-        # TODO: implement in src/mcp/tools_impl.py
-        return {"error": "trace_evidence not yet implemented."}
+        from src.mcp.tools_impl import retrieve_typology_chunks
+        return retrieve_typology_chunks(**tool_input, conn=conn)
 
     else:
         return {"error": f"Unknown tool: {tool_name}"}

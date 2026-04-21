@@ -167,29 +167,6 @@ Node: Chunk
                                                   # index `chunk_embeddings`. Add this edge
                                                   # in a follow-up pass if needed.
 
-### LAYER 3 — Case Assessments (runtime, written by agent)
-
-Node: CaseAssessment
-  Properties: assessment_id (str, unique), subject_id (str), subject_type (str),
-              verdict (str: HIGH_RISK|MEDIUM_RISK|LOW_RISK|CLEARED),
-              risk_score (float 0-1), agent (str), created_at (datetime)
-
-Node: RiskFinding
-  Properties: finding_id (str), finding_type (str),
-              severity (str: HIGH|MEDIUM|LOW|INFO),
-              description (str), pattern_name (str|null)
-
-Node: InvestigationStep
-  Properties: step_id (str), step_number (int), description (str),
-              cypher_used (str|null)
-
-### LAYER 3 Relationships
-
-(Person|Company|Intermediary)-[:HAS_ASSESSMENT]->(CaseAssessment)
-(CaseAssessment)-[:HAS_FINDING]->(RiskFinding)
-(CaseAssessment)-[:HAS_STEP]->(InvestigationStep)
-(InvestigationStep)-[:CITES_REQUIREMENT]->(Requirement)
-(InvestigationStep)-[:CITES_CHUNK {similarity_score}]->(Chunk)
 
 ### Cypher Best Practices
 - Always use parameterised queries ($param) — never string interpolation.
@@ -459,19 +436,6 @@ PATTERN_HINTS: str = "\n".join(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass
-class RiskFinding:
-    finding_type: str
-    severity: str
-    description: str
-    pattern_name: str = ""
-    entity_ids: list[str] = field(default_factory=list)
-    evidence: list[dict] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return self.__dict__.copy()
-
-
-@dataclass
 class AMLRiskResponse:
     """Top-level response returned by AMLAgent to the chat UI."""
     session_id: str
@@ -485,7 +449,6 @@ class AMLRiskResponse:
     cited_sections: list[dict] = field(default_factory=list)
     cited_chunks: list[dict] = field(default_factory=list)
     recommended_actions: list[str] = field(default_factory=list)
-    assessment_id: str | None = None
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()

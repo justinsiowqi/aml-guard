@@ -16,7 +16,7 @@ Cypher best practices (carry over from loanguard-ai):
 """
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.graph.connection import Neo4jConnection
@@ -202,58 +202,3 @@ def vector_search_typology_chunks(
     })
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LAYER 3 — Case assessments (runtime, written by agent)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def merge_case_assessment(
-    conn: "Neo4jConnection",
-    assessment_id: str,
-    entity_id: str,
-    entity_type: str,
-    verdict: str,
-    risk_score: float,
-    agent: str = "AMLAgent",
-    **kwargs: Any,
-) -> list[dict]:
-    """
-    MERGE a CaseAssessment node and link it to the entity.
-
-    TODO: implement. Mirror of loanguard-ai's merge_assessment().
-    Node label: CaseAssessment
-    Relationship: (Entity)-[:HAS_ASSESSMENT]->(CaseAssessment)
-    """
-    raise NotImplementedError("merge_case_assessment() — implement when Layer 3 schema is finalised.")
-
-
-def batch_merge_risk_findings(
-    conn: "Neo4jConnection", assessment_id: str, findings: list[dict]
-) -> list[dict]:
-    """
-    Batch-MERGE RiskFinding nodes linked to assessment_id.
-
-    TODO: implement. Mirror of loanguard-ai's batch_merge_findings().
-    """
-    raise NotImplementedError("batch_merge_risk_findings() — implement when Layer 3 schema is finalised.")
-
-
-def batch_merge_investigation_steps(
-    conn: "Neo4jConnection", assessment_id: str, steps: list[dict]
-) -> list[dict]:
-    """
-    Batch-MERGE InvestigationStep nodes with CITES_TYPOLOGY / CITES_CHUNK edges.
-
-    TODO: implement. Mirror of loanguard-ai's batch_merge_reasoning_steps().
-    """
-    raise NotImplementedError("batch_merge_investigation_steps() — implement when Layer 3 schema is finalised.")
-
-
-def get_assessment_with_evidence(
-    conn: "Neo4jConnection", assessment_id: str
-) -> list[dict]:
-    """
-    Retrieve a CaseAssessment with all linked findings, steps, cited typologies, and chunks.
-
-    TODO: implement. Mirror of loanguard-ai's get_assessment_with_evidence().
-    """
-    raise NotImplementedError("get_assessment_with_evidence() — implement when Layer 3 schema is finalised.")

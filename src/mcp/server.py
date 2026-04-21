@@ -38,8 +38,6 @@ try:
         traverse_entity_network,
         detect_graph_anomalies,
         retrieve_typology_chunks,
-        persist_case_finding,
-        trace_evidence,
     )
     from src.graph.connection import Neo4jConnection
 except ImportError:
@@ -47,8 +45,6 @@ except ImportError:
         traverse_entity_network,
         detect_graph_anomalies,
         retrieve_typology_chunks,
-        persist_case_finding,
-        trace_evidence,
     )
     from graph.connection import Neo4jConnection
 
@@ -98,38 +94,6 @@ def retrieve_typology_chunks_tool(
     with Neo4jConnection() as conn:
         return retrieve_typology_chunks(query_text, typology_id, top_k, conn=conn)
 
-
-@mcp.tool()
-def persist_case_finding_tool(
-    entity_id: str,
-    entity_type: str,
-    verdict: str,
-    risk_score: float,
-    findings: list,
-    reasoning_steps: list,
-) -> dict:
-    """
-    Write investigation results to the graph as a CaseAssessment with linked
-    RiskFindings and InvestigationSteps (Layer 3). Always call this as the
-    final step before producing your output.
-    verdict must be one of: HIGH_RISK, MEDIUM_RISK, LOW_RISK, CLEARED.
-    risk_score must be between 0.0 and 1.0.
-    """
-    with Neo4jConnection() as conn:
-        return persist_case_finding(
-            entity_id, entity_type, verdict, risk_score,
-            findings, reasoning_steps, conn=conn,
-        )
-
-
-@mcp.tool()
-def trace_evidence_tool(assessment_id: str) -> dict:
-    """
-    Retrieve all cited typology sections and chunks for a completed
-    CaseAssessment. Use to populate the evidence panel in the UI.
-    """
-    with Neo4jConnection() as conn:
-        return trace_evidence(assessment_id, conn=conn)
 
 
 def main():
