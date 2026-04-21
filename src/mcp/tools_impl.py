@@ -27,22 +27,27 @@ def traverse_entity_network(
     conn: "Neo4jConnection | None" = None,
 ) -> dict:
     """
-    Pull entity subgraph: accounts, transactions, ownership, jurisdiction links.
+    Pull entity subgraph and ownership/association network for a Layer 1 entity.
 
-    TODO: call src.graph.queries.get_entity_subgraph() and
-          src.graph.queries.get_entity_network().
-
-    Returns:
-        {
-          "entity_id": str,
-          "entity_type": str,
-          "subgraph": list[dict],   # node/relationship records
-          "network": list[dict],    # ownership chain records
-        }
+    For Intermediary entities, also returns the full intermediary network
+    (all companies set up and their jurisdictions).
     """
-    raise NotImplementedError(
-        "traverse_entity_network() — implement after Layer 1 queries are built."
-    )
+    from src.graph.queries import get_entity_subgraph, get_entity_network, get_intermediary_network
+
+    subgraph = get_entity_subgraph(conn, entity_id)
+    network  = get_entity_network(conn, entity_id, depth)
+
+    result = {
+        "entity_id":   entity_id,
+        "entity_type": entity_type,
+        "subgraph":    subgraph,
+        "network":     network,
+    }
+
+    if entity_type == "Intermediary":
+        result["intermediary_network"] = get_intermediary_network(conn, entity_id)
+
+    return result
 
 
 def detect_graph_anomalies(
@@ -53,29 +58,51 @@ def detect_graph_anomalies(
     """
     Run named anomaly patterns from ANOMALY_REGISTRY against the graph.
 
-    Mirror of loanguard-ai's detect_graph_anomalies() — same logic,
-    different registry patterns.
-
-    TODO: import ANOMALY_REGISTRY from src.mcp.schema and execute each
-          pattern's Cypher via conn.run_query(). If entity_id is provided,
-          inject a WHERE clause to scope results to that entity.
-
-    Returns:
-        {
-          "patterns_run": list[str],
-          "results": {
-            pattern_name: {
-              "hits": int,
-              "severity": str,
-              "description": str,
-              "records": list[dict],
-            }
-          }
-        }
+    If entity_id is provided, filters each result set to rows where any
+    string field contains the entity_id (post-query filter — avoids
+    rewriting each pattern's Cypher for entity scoping).
     """
-    raise NotImplementedError(
-        "detect_graph_anomalies() — implement after ANOMALY_REGISTRY Cypher is validated."
-    )
+    from src.mcp.schema import ANOMALY_REGISTRY
+
+    unknown = [n for n in pattern_names if n not in ANOMALY_REGISTRY]
+    if unknown:
+        logger.warning("Unknown pattern names requested: %s", unknown)
+
+    results = {}
+    for name in pattern_names:
+        pat = ANOMALY_REGISTRY.get(name)
+        if pat is None:
+            continue
+        try:
+            rows = conn.run_query(pat.cypher, pat.params or {})
+
+            # Scope to entity if provided — filter rows where any value matches
+            if entity_id and rows:
+                rows = [
+                    r for r in rows
+                    if any(entity_id in str(v) for v in r.values())
+                ]
+
+            results[name] = {
+                "hits":        len(rows),
+                "severity":    pat.severity,
+                "description": pat.description,
+                "records":     rows,
+            }
+        except Exception as e:
+            logger.error("Pattern %s failed: %s", name, e)
+            results[name] = {
+                "hits":        0,
+                "severity":    pat.severity,
+                "description": pat.description,
+                "records":     [],
+                "error":       str(e),
+            }
+
+    return {
+        "patterns_run": list(results.keys()),
+        "results":      results,
+    }
 
 
 def retrieve_typology_chunks(

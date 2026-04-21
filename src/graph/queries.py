@@ -28,38 +28,90 @@ if TYPE_CHECKING:
 
 def get_entity_subgraph(conn: "Neo4jConnection", entity_id: str) -> list[dict]:
     """
-    Return the first-degree subgraph for any AML entity (Entity, Account, Transaction, etc.).
+    Return the first-degree subgraph for a Layer 1 entity matched by name or node_id.
 
-    TODO: implement once Layer 1 schema is finalised.
-    Suggested query shape:
-        MATCH (e {entity_id: $entity_id})
-        OPTIONAL MATCH (e)-[r1]-(neighbour)
-        OPTIONAL MATCH (neighbour)-[r2]-(second)
-        RETURN ...
+    Searches across Person, Company, Intermediary, Address, and Jurisdiction.
+    Returns the matching node plus all directly connected neighbours with
+    relationship type and direction.
     """
-    raise NotImplementedError("get_entity_subgraph() — implement after Layer 1 is loaded.")
+    return conn.run_query("""
+        MATCH (e)
+        WHERE (e.node_id = $entity_id OR e.name = $entity_id OR e.jurisdiction_id = $entity_id)
+          AND any(lbl IN labels(e) WHERE lbl IN ['Person','Company','Intermediary','Address','Jurisdiction'])
+        OPTIONAL MATCH (e)-[r]-(neighbour)
+        RETURN
+            e.node_id                          AS entity_id,
+            labels(e)[0]                       AS entity_type,
+            e.name                             AS entity_name,
+            e.jurisdiction                     AS jurisdiction,
+            e.status                           AS status,
+            e.source_leak                      AS source_leak,
+            collect(DISTINCT {
+                neighbour_id:   coalesce(neighbour.node_id, neighbour.jurisdiction_id),
+                neighbour_type: labels(neighbour)[0],
+                neighbour_name: neighbour.name,
+                rel_type:       type(r),
+                rel_props:      properties(r)
+            })                                 AS neighbours
+        LIMIT 1
+    """, {"entity_id": entity_id})
 
 
-def get_account_transactions(
-    conn: "Neo4jConnection", account_id: str
+def get_intermediary_network(
+    conn: "Neo4jConnection", intermediary_id: str
 ) -> list[dict]:
     """
-    Return all transactions linked to an account (inbound and outbound).
+    Return all companies set up by an intermediary (registered agent / law firm),
+    with their jurisdiction and AML risk rating.
 
-    TODO: implement once Layer 1 transaction nodes are confirmed.
+    Core AML signal: a single intermediary setting up many shells in high-risk
+    jurisdictions (e.g. Mossack Fonseca / Panama Papers pattern).
     """
-    raise NotImplementedError("get_account_transactions() — implement after Layer 1 is loaded.")
+    return conn.run_query("""
+        MATCH (i:Intermediary)-[:INTERMEDIARY_OF]->(c:Company)
+        WHERE i.node_id = $intermediary_id OR i.name = $intermediary_id
+        OPTIONAL MATCH (c)-[:INCORPORATED_IN]->(j:Jurisdiction)
+        OPTIONAL MATCH (c)-[:REGISTERED_AT]->(a:Address)
+        RETURN
+            i.node_id           AS intermediary_id,
+            i.name              AS intermediary_name,
+            i.countries         AS intermediary_country,
+            c.node_id           AS company_id,
+            c.name              AS company_name,
+            c.status            AS company_status,
+            c.incorporation_date AS incorporation_date,
+            c.service_provider  AS service_provider,
+            j.jurisdiction_id   AS jurisdiction_id,
+            j.name              AS jurisdiction_name,
+            j.aml_risk_rating   AS aml_risk_rating,
+            a.address           AS registered_address
+        ORDER BY j.aml_risk_rating, c.name
+    """, {"intermediary_id": intermediary_id})
 
 
 def get_entity_network(
     conn: "Neo4jConnection", entity_id: str, depth: int = 2
 ) -> list[dict]:
     """
-    Return ownership/association chains up to `depth` hops from entity_id.
-
-    TODO: implement. Variable-length path — use size(r) not length(r).
+    Return ownership/association chains up to `depth` hops from a Company or Person,
+    traversing IS_OFFICER_OF, INTERMEDIARY_OF, SHARES_ADDRESS_WITH, and INCORPORATED_IN.
     """
-    raise NotImplementedError("get_entity_network() — implement after Layer 1 is loaded.")
+    return conn.run_query("""
+        MATCH (start)
+        WHERE (start.node_id = $entity_id OR start.name = $entity_id)
+          AND any(lbl IN labels(start) WHERE lbl IN ['Person','Company','Intermediary'])
+        MATCH path = (start)-[r:IS_OFFICER_OF|INTERMEDIARY_OF|SHARES_ADDRESS_WITH|INCORPORATED_IN*1..2]->(connected)
+        RETURN
+            start.node_id                          AS origin_id,
+            labels(start)[0]                       AS origin_type,
+            coalesce(connected.node_id, connected.jurisdiction_id) AS connected_id,
+            coalesce(connected.name, connected.jurisdiction_id)    AS connected_name,
+            labels(connected)[0]                   AS connected_type,
+            [rel IN r | type(rel)]                 AS hop_types,
+            size(r)                                AS depth
+        ORDER BY depth, connected_type
+        LIMIT 50
+    """, {"entity_id": entity_id, "depth": depth})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -70,12 +122,33 @@ def get_typology_path(
     conn: "Neo4jConnection", entity_id: str, typology_id: str
 ) -> list[dict]:
     """
-    Walk the Regulation → Section → Requirement → Indicator path for an entity.
-
-    TODO: implement after Layer 2 extraction notebooks run.
-    Mirror of loanguard-ai's get_compliance_path().
+    Return the full Regulation → Section → Requirement hierarchy for a regulation,
+    optionally filtered to sections relevant to the entity's jurisdiction or risk profile.
     """
-    raise NotImplementedError("get_typology_path() — implement after Layer 2 is loaded.")
+    return conn.run_query("""
+        MATCH (reg:Regulation {regulation_id: $typology_id})
+        MATCH (reg)-[:HAS_SECTION]->(s:Section)
+        MATCH (s)-[:HAS_REQUIREMENT]->(req:Requirement)
+        OPTIONAL MATCH (req)-[:DEFINES_THRESHOLD]->(t:Threshold)
+        RETURN
+            reg.regulation_id   AS regulation_id,
+            reg.name            AS regulation_name,
+            s.section_id        AS section_id,
+            s.section_number    AS section_number,
+            s.title             AS section_title,
+            req.requirement_id  AS requirement_id,
+            req.paragraph       AS paragraph,
+            req.text            AS requirement_text,
+            collect(DISTINCT {
+                threshold_id:   t.threshold_id,
+                metric:         t.metric,
+                operator:       t.operator,
+                value:          t.value,
+                unit:           t.unit,
+                threshold_type: t.threshold_type
+            })                  AS thresholds
+        ORDER BY s.section_number, req.paragraph
+    """, {"typology_id": typology_id, "entity_id": entity_id})
 
 
 def vector_search_typology_chunks(
