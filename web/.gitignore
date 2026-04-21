@@ -1,0 +1,20 @@
+node_modules
+.next
+out
+*.log
+.env*.local
+.DS_Store
+next-env.d.ts
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Vercel deployment artifacts
+.vercel/
+
+# Test coverage
+coverage/
+
+# Build tool caches
+.turbo/
+.swc/
