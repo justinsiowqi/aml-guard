@@ -1,0 +1,124 @@
+{
+  "case_id": "STR-2026-0417-001",
+  "subject": {
+    "id": "ent_nielsen_bvi",
+    "name": "Nielsen Enterprises Limited",
+    "type": "Company",
+    "jurisdiction": "BVI",
+    "profile_snippet": "BVI-incorporated, registered via Mossack Fonseca. Ordering bank on counterparty wires to Jonathan Lim Wei Ming (subject of STR-2026-0417-001)."
+  },
+  "question": "Investigate Nielsen Enterprises Limited for beneficial owner opacity",
+  "verdict": "HIGH_RISK",
+  "risk_score": 0.87,
+  "headline": "Shell-company opacity with structuring signal: four inbound wires under SGD 500K in 22 days via BVI entities set up by Mossack Fonseca.",
+  "tx_velocity": [0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  "findings": [
+    {
+      "id": "f_structuring",
+      "pattern_name": "transaction_structuring",
+      "severity": "HIGH",
+      "score": 9,
+      "description": "Four inbound cross-border wires arrived within 22 days (2025-11-02 → 2025-11-04 and linked 2025-10-14 predecessor), each sized immediately below SGD 500,000 (487,200 / 496,800 / 498,500 / 494,100). Aggregate SGD 1,976,600 — treated as a single aggregated transaction under MAS Notice 626 para 6.4.",
+      "evidence_ids": ["ch_mas_626_6_4"]
+    },
+    {
+      "id": "f_high_risk_jurisdiction",
+      "pattern_name": "high_risk_jurisdiction",
+      "severity": "HIGH",
+      "score": 8,
+      "description": "Nielsen Enterprises is incorporated in the British Virgin Islands (AML risk rating: HIGH). Co-counterparties Nescoll Limited and Hangon Property Holdings Limited share the same jurisdiction and ordering bank (BSI Bank Geneva). Enhanced due diligence required under MAS Notice 626 para 4.1(b).",
+      "evidence_ids": ["ch_mas_626_4_1"]
+    },
+    {
+      "id": "f_intermediary_shell",
+      "pattern_name": "intermediary_shell_network",
+      "severity": "HIGH",
+      "score": 8,
+      "description": "Nielsen, Nescoll, and Hangon were all incorporated through the same registered agent (Mossack Fonseca, historic) in the same BVI jurisdiction. The intermediary has a documented history of structuring opaque ownership vehicles — classic Panama Papers pattern. Beneficial ownership was not disclosed in the ordering bank's RFI response.",
+      "evidence_ids": ["ch_fatf_rec_24"]
+    }
+  ],
+  "typology_chunks": [
+    {
+      "id": "ch_mas_626_6_4",
+      "source": "MAS Notice 626",
+      "section": "para 6.4",
+      "title": "Structuring — aggregation of linked transactions",
+      "text": "Where a bank has reason to suspect that two or more transactions are linked and have been structured to avoid a reporting threshold, the bank shall treat them as a single transaction for the purposes of paragraphs 6.2 and 6.3.",
+      "similarity_score": 0.91
+    },
+    {
+      "id": "ch_mas_626_4_1",
+      "source": "MAS Notice 626",
+      "section": "para 4.1(b)",
+      "title": "Enhanced customer due diligence — high-risk jurisdictions",
+      "text": "A bank shall perform enhanced CDD measures in relation to any customer or transaction that presents a higher risk of money laundering, including where the customer is connected to a country or jurisdiction assessed as having inadequate AML/CFT measures.",
+      "similarity_score": 0.86
+    },
+    {
+      "id": "ch_fatf_rec_24",
+      "source": "FATF",
+      "section": "Rec. 24",
+      "title": "Transparency and beneficial ownership of legal persons",
+      "text": "Countries should take measures to prevent the misuse of legal persons for money laundering, including ensuring that adequate, accurate and timely information on the beneficial ownership of legal persons is obtained and can be accessed by competent authorities in a timely manner.",
+      "similarity_score": 0.84
+    }
+  ],
+  "investigation_steps": [
+    {
+      "tool": "traverse_entity_network",
+      "summary": "Pulled Nielsen's 2-hop subgraph: officers, intermediary (Mossack Fonseca), jurisdiction (BVI), and linked shell co-counterparties Nescoll and Hangon via shared registered-agent edge.",
+      "cypher_used": "MATCH (c:Company {node_id: $entity_id})\nOPTIONAL MATCH (c)<-[:INTERMEDIARY_OF]-(i:Intermediary)-[:INTERMEDIARY_OF]->(sib:Company)\nOPTIONAL MATCH (c)-[:INCORPORATED_IN]->(j:Jurisdiction)\nRETURN c, i, j, collect(DISTINCT sib) AS co_shells",
+      "timestamp": "2026-04-17T09:12:04Z"
+    },
+    {
+      "tool": "detect_graph_anomalies",
+      "summary": "Ran high_risk_jurisdiction, intermediary_shell_network, and shared_address_cluster. BVI jurisdiction flagged high; Mossack Fonseca flagged with 31 shells in high-risk jurisdictions.",
+      "cypher_used": "MATCH (i:Intermediary)-[:INTERMEDIARY_OF]->(c:Company)-[:INCORPORATED_IN]->(j:Jurisdiction)\nWHERE j.aml_risk_rating = 'high'\nWITH i, count(DISTINCT c) AS shell_count\nWHERE shell_count >= 5\nRETURN i.name, shell_count\nORDER BY shell_count DESC",
+      "timestamp": "2026-04-17T09:12:06Z"
+    },
+    {
+      "tool": "retrieve_typology_chunks",
+      "summary": "Semantic search over MAS Notice 626 + FATF typology corpus for 'BVI shell company beneficial owner opacity, structuring below threshold, Mossack Fonseca'. Top-3 chunks returned with cosine similarity ≥ 0.84.",
+      "cited_sections": ["MAS-626-S6", "MAS-626-S4", "FATF-REC-24"],
+      "cited_chunks": ["ch_mas_626_6_4", "ch_mas_626_4_1", "ch_fatf_rec_24"],
+      "timestamp": "2026-04-17T09:12:09Z"
+    },
+    {
+      "tool": "persist_case_finding",
+      "summary": "Wrote CaseAssessment + 3 RiskFindings + 4 InvestigationSteps to Layer 3. Assessment ID: assess_20260417_0912_a1f3.",
+      "cypher_used": "MERGE (c:Company {node_id: $entity_id})\nCREATE (a:CaseAssessment {assessment_id: $assessment_id, verdict: $verdict, risk_score: $risk_score, agent: 'AMLAgent/claude-sonnet-4-6', created_at: datetime()})\nCREATE (c)-[:HAS_ASSESSMENT]->(a)",
+      "timestamp": "2026-04-17T09:12:11Z"
+    },
+    {
+      "tool": "trace_evidence",
+      "summary": "Retrieved the 3 cited typology chunks and 3 requirement sections linked to this assessment for the evidence panel.",
+      "cited_chunks": ["ch_mas_626_6_4", "ch_mas_626_4_1", "ch_fatf_rec_24"],
+      "timestamp": "2026-04-17T09:12:12Z"
+    }
+  ],
+  "subgraph": {
+    "nodes": [
+      { "id": "p_jonathan_lim", "label": "Jonathan Lim Wei Ming", "type": "Person", "risk_tier": "HIGH", "note": "STR subject · Singapore" },
+      { "id": "c_nielsen", "label": "Nielsen Enterprises Ltd", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
+      { "id": "c_nescoll", "label": "Nescoll Limited", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
+      { "id": "c_hangon", "label": "Hangon Property Holdings", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
+      { "id": "i_mossack", "label": "Mossack Fonseca", "type": "Intermediary", "risk_tier": "HIGH", "note": "Panama · historic" },
+      { "id": "j_bvi", "label": "British Virgin Islands", "type": "Jurisdiction", "risk_tier": "HIGH", "note": "AML risk: high" },
+      { "id": "a_bsi_geneva", "label": "BSI Bank, Geneva", "type": "Address", "risk_tier": "MEDIUM", "note": "ordering bank" }
+    ],
+    "edges": [
+      { "source": "p_jonathan_lim", "target": "c_nielsen", "kind": "RECEIVED_WIRE_FROM" },
+      { "source": "p_jonathan_lim", "target": "c_nescoll", "kind": "RECEIVED_WIRE_FROM" },
+      { "source": "p_jonathan_lim", "target": "c_hangon", "kind": "RECEIVED_WIRE_FROM" },
+      { "source": "i_mossack", "target": "c_nielsen", "kind": "INTERMEDIARY_OF" },
+      { "source": "i_mossack", "target": "c_nescoll", "kind": "INTERMEDIARY_OF" },
+      { "source": "i_mossack", "target": "c_hangon", "kind": "INTERMEDIARY_OF" },
+      { "source": "c_nielsen", "target": "j_bvi", "kind": "INCORPORATED_IN" },
+      { "source": "c_nescoll", "target": "j_bvi", "kind": "INCORPORATED_IN" },
+      { "source": "c_hangon", "target": "j_bvi", "kind": "INCORPORATED_IN" },
+      { "source": "c_nielsen", "target": "a_bsi_geneva", "kind": "ROUTED_THROUGH" }
+    ]
+  },
+  "created_at": "2026-04-17T09:12:12Z"
+}
