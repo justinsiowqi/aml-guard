@@ -9,6 +9,7 @@ imports directly from mcp/tools_impl.
 import os
 import sys
 import subprocess
+from typing import Optional
 
 
 def _install_dependencies():
@@ -68,7 +69,7 @@ def traverse_entity_network_tool(
 @mcp.tool()
 def detect_graph_anomalies_tool(
     pattern_names: list,
-    entity_id: str = None,
+    entity_id: Optional[str] = None,
 ) -> dict:
     """
     Run one or more named anomaly detection patterns against the graph.
@@ -83,13 +84,13 @@ def detect_graph_anomalies_tool(
 @mcp.tool()
 def retrieve_typology_chunks_tool(
     query_text: str,
-    typology_id: str = None,
+    typology_id: Optional[str] = None,
     top_k: int = 5,
 ) -> dict:
     """
-    Semantic search over FATF/AUSTRAC typology document chunks. Embed the query
-    text and return the most relevant chunks by cosine similarity. Use to link
-    observed behaviour to known financial crime typologies.
+    Semantic search over MAS Notice 626 regulatory document chunks. Embed the
+    query text and return the most relevant chunks by cosine similarity. Use to
+    map observed entity behaviour to specific AML regulatory obligations.
     """
     with Neo4jConnection() as conn:
         return retrieve_typology_chunks(query_text, typology_id, top_k, conn=conn)
