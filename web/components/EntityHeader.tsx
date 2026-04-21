@@ -1,56 +1,50 @@
 import type { CaseAssessment } from "@/lib/types";
-import { Building2, MapPin, Briefcase, FileText } from "lucide-react";
+import { FileDown, Gavel } from "lucide-react";
+
+type Phase = "idle" | "streaming" | "settled";
+
+const STATUS_LABEL: Record<Phase, string> = {
+  idle: "Pending",
+  streaming: "Streaming",
+  settled: "Settled",
+};
 
 export default function EntityHeader({
   subject,
-  caseId,
+  phase = "settled",
 }: {
   subject: CaseAssessment["subject"];
-  caseId: string;
+  caseId?: string;
+  phase?: Phase;
 }) {
   return (
-    <div>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="font-display text-4xl leading-tight text-text sm:text-5xl">
-          {subject.name}
-        </h2>
-        <code className="mt-2 shrink-0 rounded-sm bg-surface-alt px-2 py-1 font-mono text-[11px] text-text-muted">
-          {caseId}
-        </code>
+    <div className="mb-8 flex items-end justify-between gap-6">
+      <div className="min-w-0">
+        <div className="mb-2 flex items-center gap-3">
+          <h1 className="text-3xl font-black tracking-tight text-on-surface">{subject.name}</h1>
+          <span className="rounded-sm border border-outline-variant/30 bg-surface-container-highest px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-on-surface">
+            {STATUS_LABEL[phase]}
+          </span>
+        </div>
+        <div className="max-w-2xl text-sm text-on-surface-variant">{subject.profile_snippet}</div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
-        <Chip icon={Building2} label={subject.type} />
-        <Chip icon={MapPin} label={subject.jurisdiction} tone="danger" />
-        <Chip icon={Briefcase} label="Mossack Fonseca (historic)" tone="warning" />
-      </div>
-      <div className="mt-4 flex max-w-[72ch] items-start gap-2.5 rounded-md border border-border/70 bg-surface-alt/60 px-3.5 py-2.5">
-        <FileText size={13} strokeWidth={1.75} className="mt-[3px] shrink-0 text-text-muted" />
-        <p className="text-pretty text-[13px] leading-relaxed text-text/80">
-          {subject.profile_snippet}
-        </p>
+
+      <div className="flex shrink-0 gap-3">
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded border border-outline-variant/30 px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low"
+        >
+          <FileDown size={16} strokeWidth={1.75} />
+          Export PDF
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded bg-gradient-to-br from-primary to-primary-container px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+        >
+          <Gavel size={16} strokeWidth={1.75} />
+          File SAR
+        </button>
       </div>
     </div>
-  );
-}
-
-function Chip({
-  icon: Icon,
-  label,
-  tone = "neutral",
-}: {
-  icon: typeof Building2;
-  label: string;
-  tone?: "neutral" | "danger" | "warning";
-}) {
-  const tones = {
-    neutral: "border-border bg-surface text-text",
-    danger: "border-danger/20 bg-danger/5 text-danger",
-    warning: "border-warning/20 bg-warning/5 text-warning",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${tones[tone]}`}>
-      <Icon size={12} strokeWidth={1.75} />
-      {label}
-    </span>
   );
 }

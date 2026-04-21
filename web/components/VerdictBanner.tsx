@@ -1,27 +1,27 @@
 import type { Verdict } from "@/lib/types";
-import RiskGauge from "./RiskGauge";
+import { Scale } from "lucide-react";
 import Sparkline from "./Sparkline";
 
 const VERDICT_META: Record<
   Verdict,
-  { label: string; tone: "danger" | "warning" | "success"; note: string }
+  { label: string; tone: "error" | "warning" | "success"; note: string; pill: string }
 > = {
-  HIGH_RISK:   { label: "HIGH_RISK",   tone: "danger",  note: "File STR; freeze eligibility review" },
-  MEDIUM_RISK: { label: "MEDIUM_RISK", tone: "warning", note: "Escalate to senior investigator"    },
-  LOW_RISK:    { label: "LOW_RISK",    tone: "success", note: "Continue periodic monitoring"       },
-  CLEARED:     { label: "CLEARED",     tone: "success", note: "No further action"                  },
+  HIGH_RISK:   { label: "High",   tone: "error",   note: "File STR; freeze eligibility review", pill: "High" },
+  MEDIUM_RISK: { label: "Medium", tone: "warning", note: "Escalate to senior investigator",    pill: "Medium" },
+  LOW_RISK:    { label: "Low",    tone: "success", note: "Continue periodic monitoring",       pill: "Low" },
+  CLEARED:     { label: "Cleared", tone: "success", note: "No further action",                 pill: "Cleared" },
 };
 
-const TONE_BG = {
-  danger: "bg-danger/5 border-danger",
-  warning: "bg-warning/5 border-warning",
-  success: "bg-success/5 border-success",
+const PILL_TONE = {
+  error: "bg-error-container text-on-error-container",
+  warning: "bg-secondary-fixed text-on-secondary-fixed",
+  success: "bg-primary-fixed text-on-primary-fixed",
 };
 
-const TONE_TEXT = {
-  danger: "text-danger",
-  warning: "text-warning",
-  success: "text-success",
+const SCORE_TONE = {
+  error: "text-error",
+  warning: "text-on-secondary-fixed-variant",
+  success: "text-primary",
 };
 
 export default function VerdictBanner({
@@ -36,37 +36,46 @@ export default function VerdictBanner({
   txVelocity: number[];
 }) {
   const meta = VERDICT_META[verdict];
-  return (
-    <div className={`rounded-md border border-l-4 bg-surface px-6 py-6 shadow-sm ${TONE_BG[meta.tone]}`}>
-      <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-text-muted">
-            Verdict
-          </div>
-          <div className={`font-display text-[44px] leading-none tracking-tight sm:text-[56px] ${TONE_TEXT[meta.tone]}`}>
-            {meta.label}
-          </div>
-          <p className="mt-3 max-w-xl text-sm text-text/90">{headline}</p>
-          <p className="mt-1 text-[12px] text-text-muted">
-            Recommendation — <span className="text-text">{meta.note}</span>
-          </p>
-        </div>
-        <div className="flex shrink-0 items-start gap-8">
-          <RiskGauge value={riskScore} tone={meta.tone} />
-        </div>
-      </div>
+  const maxTx = Math.max(...txVelocity, 1);
 
-      <div className="mt-6 flex flex-wrap items-end gap-6 border-t border-border/70 pt-4">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
-            Transaction velocity · last 12 periods
+  return (
+    <div className="h-full rounded border border-surface-container bg-surface-container-lowest p-6">
+      <div className="flex gap-8">
+        <div className="flex min-w-[140px] flex-col items-center justify-center border-r border-surface-container-high pr-8">
+          <div className="mb-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+            Risk Score
           </div>
-          <div className="mt-2">
-            <Sparkline data={txVelocity} tone={meta.tone} />
+          <div className={`mb-1 font-mono text-5xl font-bold ${SCORE_TONE[meta.tone]}`}>
+            {riskScore.toFixed(2)}
+          </div>
+          <div
+            className={`rounded-sm px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${PILL_TONE[meta.tone]}`}
+          >
+            {meta.pill}
           </div>
         </div>
-        <div className="tabular text-[12px] text-text-muted">
-          4 inbound wires · 22 days · each &lt; SGD 500,000
+
+        <div className="flex-1">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-on-surface">
+            <Scale size={16} strokeWidth={2} className="text-primary" />
+            Analyst Recommendation
+          </h3>
+          <p className="mb-4 text-base font-medium leading-relaxed text-on-surface">{headline}</p>
+
+          <div className="border-t border-surface-container-high pt-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                Transaction Velocity · last 12 periods
+              </span>
+              <span className="font-mono text-xs text-on-surface-variant">
+                Max: {maxTx.toLocaleString()}
+              </span>
+            </div>
+            <Sparkline data={txVelocity} tone={meta.tone} width={480} height={32} />
+            <div className="mt-2 text-[11px] italic text-on-surface-variant">
+              Recommendation — <span className="not-italic text-on-surface">{meta.note}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,13 +1,15 @@
+export type SparklineTone = "error" | "warning" | "success" | "neutral";
+
 export default function Sparkline({
   data,
   width = 220,
   height = 36,
-  tone = "danger",
+  tone = "error",
 }: {
   data: number[];
   width?: number;
   height?: number;
-  tone?: "danger" | "warning" | "success" | "neutral";
+  tone?: SparklineTone;
 }) {
   if (!data.length) return null;
   const max = Math.max(...data, 1);
@@ -16,16 +18,16 @@ export default function Sparkline({
     .map((v, i) => `${(i * stepX).toFixed(2)},${(height - (v / max) * (height - 4) - 2).toFixed(2)}`)
     .join(" ");
 
-  const colorMap = {
-    danger: "#991b1b",
-    warning: "#92400e",
-    success: "#166534",
-    neutral: "#737373",
+  const colorMap: Record<SparklineTone, string> = {
+    error: "#ba1a1a",
+    warning: "#785a00",
+    success: "#00288e",
+    neutral: "#757684",
   };
   const color = colorMap[tone];
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden>
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden>
       <polyline
         fill="none"
         stroke={color}
