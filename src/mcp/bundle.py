@@ -2,10 +2,13 @@
 Bundle the AML Guard MCP server into a zip file for H2OGPTe upload.
 
 Packages:
-  server.py          — FastMCP entrypoint
-  requirements.txt   — dependencies installed at server startup
-  mcp/               — tools_impl.py, schema.py (flattened from src/mcp/)
-  graph/             — connection.py, queries.py (flattened from src/graph/)
+  server.py          — FastMCP entrypoint (top level)
+  envs.json          — H2OGPTe secret-injection manifest (top level, single copy)
+  requirements.txt   — dependencies installed at server startup (top level)
+  aml_tools/         — single flat package: tools_impl, schema, tool_defs,
+                       connection, queries. Named `aml_tools` (not `mcp`) to
+                       avoid shadowing the pip-installed `mcp` package that
+                       FastMCP ships as.
 
 Usage:
   python src/mcp/bundle.py
@@ -19,14 +22,21 @@ import zipfile
 from pathlib import Path
 
 EXCLUDE_PATTERNS = {"__pycache__", ".pyc", ".pyo", ".git", ".DS_Store", ".env", "dist_mcp"}
+SKIP_FILES_FROM_MCP = {"server.py", "bundle.py", "envs.json", "__init__.py"}
+SKIP_FILES_FROM_GRAPH = {"__init__.py"}
 
 
 def _should_exclude(path: str) -> bool:
     return any(p in path for p in EXCLUDE_PATTERNS)
 
 
-def _copy_filter(directory, files):
-    return [f for f in files if _should_exclude(f)]
+def _copy_package_files(src: Path, dest: Path, skip: set[str]) -> None:
+    """Copy .py files from src into dest, skipping listed filenames and excluded patterns."""
+    for item in src.iterdir():
+        if item.name in skip or _should_exclude(item.name):
+            continue
+        if item.is_file() and item.suffix == ".py":
+            shutil.copy(item, dest / item.name)
 
 
 def build_mcp_zip(output_name: str = "aml_guard_mcp.zip", cleanup: bool = True) -> Path:
@@ -42,6 +52,7 @@ def build_mcp_zip(output_name: str = "aml_guard_mcp.zip", cleanup: bool = True) 
     """
     mcp_dir = Path(__file__).resolve().parent          # src/mcp/
     src_dir = mcp_dir.parent                           # src/
+    graph_dir = src_dir / "graph"
     project_root = src_dir.parent                      # aml-guard/
     dist_dir = mcp_dir / "dist_mcp"
 
@@ -54,19 +65,19 @@ def build_mcp_zip(output_name: str = "aml_guard_mcp.zip", cleanup: bool = True) 
         shutil.rmtree(dist_dir)
     dist_dir.mkdir()
 
-    # server.py
+    # server.py (top level)
     shutil.copy(mcp_dir / "server.py", dist_dir / "server.py")
     print("  Copied: server.py")
 
-    # envs.json
+    # envs.json (top level, single copy)
     envs_src = mcp_dir / "envs.json"
     if envs_src.exists():
         shutil.copy(envs_src, dist_dir / "envs.json")
-        print(f"  Copied: envs.json")
+        print("  Copied: envs.json")
     else:
         print(f"  Warning: envs.json not found at {envs_src}")
 
-    # requirements.txt from project root
+    # requirements.txt from project root (top level)
     req_src = project_root / "requirements.txt"
     if req_src.exists():
         shutil.copy(req_src, dist_dir / "requirements.txt")
@@ -74,19 +85,15 @@ def build_mcp_zip(output_name: str = "aml_guard_mcp.zip", cleanup: bool = True) 
     else:
         print("  Warning: requirements.txt not found — server will skip dependency install.")
 
-    # src/mcp/ → mcp/  (exclude server.py and bundle.py — already at root)
-    mcp_dest = dist_dir / "mcp"
-    shutil.copytree(mcp_dir, mcp_dest, ignore=_copy_filter)
-    for skip in ("server.py", "bundle.py"):
-        (mcp_dest / skip).unlink(missing_ok=True)
-    print("  Copied: mcp/ (tools_impl, schema, tool_defs)")
+    # aml_tools/ — flattened package combining src/mcp/ and src/graph/
+    aml_tools_dest = dist_dir / "aml_tools"
+    aml_tools_dest.mkdir()
+    (aml_tools_dest / "__init__.py").write_text('"""AML Guard bundled tools package."""\n')
 
-    # src/graph/ → graph/
-    graph_src = src_dir / "graph"
-    if not graph_src.exists():
-        raise FileNotFoundError(f"graph directory not found at {graph_src}")
-    shutil.copytree(graph_src, dist_dir / "graph", ignore=_copy_filter)
-    print("  Copied: graph/ (connection, queries)")
+    _copy_package_files(mcp_dir, aml_tools_dest, SKIP_FILES_FROM_MCP)
+    _copy_package_files(graph_dir, aml_tools_dest, SKIP_FILES_FROM_GRAPH)
+    copied = sorted(f.name for f in aml_tools_dest.iterdir() if f.suffix == ".py")
+    print(f"  Copied: aml_tools/ ({', '.join(copied)})")
 
     # Create zip
     zip_path = mcp_dir / output_name
@@ -104,7 +111,7 @@ def build_mcp_zip(output_name: str = "aml_guard_mcp.zip", cleanup: bool = True) 
 
     if cleanup:
         shutil.rmtree(dist_dir)
-        print(f"  Cleaned up staging dir.")
+        print("  Cleaned up staging dir.")
 
     print(f"Done! Bundle ready at: {zip_path}")
     return zip_path

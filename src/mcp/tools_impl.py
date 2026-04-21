@@ -11,6 +11,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Resolve helper modules for both dev mode (src.*) and bundled mode (aml_tools.*).
+try:
+    from src.graph.queries import (
+        get_entity_subgraph,
+        get_entity_network,
+        get_intermediary_network,
+        vector_search_typology_chunks,
+    )
+    from src.mcp.schema import ANOMALY_REGISTRY
+    from src.agent.config import EMBEDDING_MODEL
+except ImportError:
+    from aml_tools.queries import (
+        get_entity_subgraph,
+        get_entity_network,
+        get_intermediary_network,
+        vector_search_typology_chunks,
+    )
+    from aml_tools.schema import ANOMALY_REGISTRY
+    EMBEDDING_MODEL = "bge-large-en-v1.5"
+
 
 def traverse_entity_network(
     entity_id: str,
@@ -24,8 +44,6 @@ def traverse_entity_network(
     For Intermediary entities, also returns the full intermediary network
     (all companies set up and their jurisdictions).
     """
-    from src.graph.queries import get_entity_subgraph, get_entity_network, get_intermediary_network
-
     subgraph = get_entity_subgraph(conn, entity_id)
     network  = get_entity_network(conn, entity_id, depth)
 
@@ -54,8 +72,6 @@ def detect_graph_anomalies(
     string field contains the entity_id (post-query filter — avoids
     rewriting each pattern's Cypher for entity scoping).
     """
-    from src.mcp.schema import ANOMALY_REGISTRY
-
     unknown = [n for n in pattern_names if n not in ANOMALY_REGISTRY]
     if unknown:
         logger.warning("Unknown pattern names requested: %s", unknown)
@@ -115,10 +131,7 @@ def retrieve_typology_chunks(
           ]
         }
     """
-    import os
     from h2ogpte import H2OGPTE
-    from src.graph.queries import vector_search_typology_chunks
-    from src.agent.config import EMBEDDING_MODEL
 
     h2ogpte_url = os.getenv("H2OGPTE_URL") or os.getenv("H2OGPTE_ADDRESS")
     h2ogpte_key = os.getenv("H2OGPTE_API_KEY")

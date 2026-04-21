@@ -42,12 +42,12 @@ try:
     )
     from src.graph.connection import Neo4jConnection
 except ImportError:
-    from mcp.tools_impl import (
+    from aml_tools.tools_impl import (
         traverse_entity_network,
         detect_graph_anomalies,
         retrieve_typology_chunks,
     )
-    from graph.connection import Neo4jConnection
+    from aml_tools.connection import Neo4jConnection
 
 mcp = FastMCP("aml-guard")
 
