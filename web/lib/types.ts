@@ -13,7 +13,6 @@ export type ToolName =
   | "traverse_entity_network"
   | "detect_graph_anomalies"
   | "retrieve_typology_chunks"
-  | "persist_case_finding"
   | "trace_evidence";
 
 export type PatternName =

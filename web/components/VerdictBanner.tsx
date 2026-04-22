@@ -56,18 +56,21 @@ export default function VerdictBanner({
   riskScore,
   headline,
   txVelocity,
+  handedOff,
+  onHandoff,
 }: {
   verdict: Verdict;
   riskScore: number;
   headline: string;
   txVelocity: number[];
+  handedOff: boolean;
+  onHandoff: () => void;
 }) {
   const meta = VERDICT_META[verdict];
   const maxTx = Math.max(...txVelocity, 1);
   const maxDecomp = Math.max(...RISK_DECOMPOSITION.map((d) => d.value));
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [handedOff, setHandedOff] = useState(false);
 
   const total = VERIFICATION_PROTOCOL.length;
   const done = checked.size;
@@ -216,7 +219,7 @@ export default function VerdictBanner({
               </span>
               <button
                 type="button"
-                onClick={() => setHandedOff(true)}
+                onClick={onHandoff}
                 disabled={!complete || handedOff}
                 className="flex h-9 items-center gap-2 rounded bg-[#1e40af] px-4 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               >

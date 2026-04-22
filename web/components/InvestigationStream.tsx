@@ -11,7 +11,6 @@ const TOOL_TITLE: Record<ToolName, string> = {
   traverse_entity_network: "Entity Resolution",
   detect_graph_anomalies: "Typology Matching",
   retrieve_typology_chunks: "Evidence Retrieval",
-  persist_case_finding: "Case Persistence",
   trace_evidence: "Transaction Monitoring",
 };
 
@@ -19,7 +18,6 @@ const TOOL_TONE: Record<ToolName, Tone> = {
   traverse_entity_network: "primary",
   detect_graph_anomalies: "primary",
   retrieve_typology_chunks: "primary",
-  persist_case_finding: "primary",
   trace_evidence: "primary",
 };
 

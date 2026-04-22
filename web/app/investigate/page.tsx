@@ -30,12 +30,16 @@ export default function InvestigatePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [assessment, setAssessment] = useState<CaseAssessment | null>(null);
   const [question, setQuestion] = useState<string>("");
+  const [handedOff, setHandedOff] = useState(false);
+  const [sarFiled, setSarFiled] = useState(false);
   const subjectRef = useRef<HTMLDivElement | null>(null);
 
   async function handleSubmit(q: string) {
     setQuestion(q);
     setPhase("streaming");
     setAssessment(null);
+    setHandedOff(false);
+    setSarFiled(false);
     const startedAt = Date.now();
     const result = await investigate(q);
     const rebased = {
@@ -86,7 +90,13 @@ export default function InvestigatePage() {
 
         {phase !== "idle" && assessment && (
           <div ref={subjectRef}>
-            <EntityHeader subject={assessment.subject} phase={phase} />
+            <EntityHeader
+              subject={assessment.subject}
+              phase={phase}
+              handedOff={handedOff}
+              sarFiled={sarFiled}
+              onFileSAR={() => setSarFiled(true)}
+            />
 
             <div className="mb-6 grid grid-cols-12 gap-6">
               <div className="col-span-12 lg:col-span-8">
@@ -96,6 +106,8 @@ export default function InvestigatePage() {
                     riskScore={assessment.risk_score}
                     headline={assessment.headline}
                     txVelocity={assessment.tx_velocity}
+                    handedOff={handedOff}
+                    onHandoff={() => setHandedOff(true)}
                   />
                 ) : (
                   <div className="flex h-full min-h-[220px] items-center justify-center rounded border border-dashed border-outline-variant/40 bg-surface-container-lowest p-8 text-sm text-on-surface-variant">
@@ -113,9 +125,12 @@ export default function InvestigatePage() {
 
             {phase === "settled" && (
               <>
-                <div className="mb-6 grid grid-cols-12 gap-6">
+                <div className="mb-6 grid grid-cols-12 items-start gap-6">
                   <div className="col-span-12 lg:col-span-8">
-                    <FindingsList findings={assessment.findings} />
+                    <FindingsList
+                      findings={assessment.findings}
+                      chunks={assessment.typology_chunks}
+                    />
                   </div>
                   <div className="col-span-12 lg:col-span-4">
                     <TypologyEvidence chunks={assessment.typology_chunks} />

@@ -1,5 +1,8 @@
-import type { Finding, Severity } from "@/lib/types";
-import { FileSearch, Filter } from "lucide-react";
+"use client";
+
+import { Fragment, useState } from "react";
+import type { Finding, Severity, TypologyChunk } from "@/lib/types";
+import { ChevronDown, Filter } from "lucide-react";
 
 const SEV_ORDER: Record<Severity, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, INFO: 3 };
 
@@ -25,7 +28,26 @@ function titleCase(name: string): string {
     .join(" ");
 }
 
-export default function FindingsList({ findings }: { findings: Finding[] }) {
+export default function FindingsList({
+  findings,
+  chunks = [],
+}: {
+  findings: Finding[];
+  chunks?: TypologyChunk[];
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const chunksById = new Map(chunks.map((c) => [c.id, c]));
+
   const sorted = [...findings].sort(
     (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || b.score - a.score,
   );
@@ -53,44 +75,97 @@ export default function FindingsList({ findings }: { findings: Finding[] }) {
               <th className="p-3">Description</th>
               <th className="w-24 p-3">Severity</th>
               <th className="w-20 p-3 text-right">Score</th>
-              <th className="w-24 p-3 text-center">Evidence</th>
+              <th className="w-16 p-3 text-center">Details</th>
             </tr>
           </thead>
           <tbody className="text-sm">
             {sorted.map((f) => {
               const pill = SEV_PILL[f.severity];
+              const isOpen = expanded.has(f.id);
+              const linkedChunks = f.evidence_ids
+                .map((id) => chunksById.get(id))
+                .filter((c): c is TypologyChunk => Boolean(c));
+
               return (
-                <tr
-                  key={f.id}
-                  className="group border-b border-surface-container last:border-b-0 hover:bg-surface-container-low/50"
-                >
-                  <td className="p-3 font-mono text-xs text-on-surface-variant">
-                    {patternCode(f.pattern_name)}
-                  </td>
-                  <td className="p-3 font-medium text-on-surface">
-                    <div>{titleCase(f.pattern_name)}</div>
-                    <div className="mt-1 line-clamp-2 text-xs text-on-surface-variant">
-                      {f.description}
-                    </div>
-                  </td>
-                  <td className="p-3">
-                    <span
-                      className={`rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${pill.classes}`}
-                    >
-                      {pill.label}
-                    </span>
-                  </td>
-                  <td className="p-3 text-right font-mono text-xs">{(f.score / 10).toFixed(2)}</td>
-                  <td className="p-3 text-center">
-                    <button
-                      type="button"
-                      aria-label={`View evidence for ${f.pattern_name}`}
-                      className="text-[#1e40af] transition-opacity hover:opacity-70"
-                    >
-                      <FileSearch size={18} strokeWidth={1.75} />
-                    </button>
-                  </td>
-                </tr>
+                <Fragment key={f.id}>
+                  <tr
+                    onClick={() => toggle(f.id)}
+                    className={`group cursor-pointer border-b border-surface-container last:border-b-0 transition-colors hover:bg-surface-container-low/50 ${
+                      isOpen ? "bg-surface-container-low/40" : ""
+                    }`}
+                  >
+                    <td className="p-3 font-mono text-xs text-on-surface-variant">
+                      {patternCode(f.pattern_name)}
+                    </td>
+                    <td className="p-3 font-medium text-on-surface">
+                      <div>{titleCase(f.pattern_name)}</div>
+                      <div
+                        className={`mt-1 text-xs text-on-surface-variant ${
+                          isOpen ? "" : "line-clamp-2"
+                        }`}
+                      >
+                        {f.description}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={`rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${pill.classes}`}
+                      >
+                        {pill.label}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right font-mono text-xs">
+                      {(f.score / 10).toFixed(2)}
+                    </td>
+                    <td className="p-3 text-center">
+                      <ChevronDown
+                        size={18}
+                        strokeWidth={2}
+                        aria-label={isOpen ? "Collapse" : "Expand"}
+                        className={`mx-auto text-[#1e40af] transition-transform ${
+                          isOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="border-b border-surface-container last:border-b-0 bg-surface-container-low/30">
+                      <td colSpan={5} className="px-4 py-3">
+                        <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          Cited Evidence
+                        </div>
+                        {linkedChunks.length === 0 ? (
+                          <div className="font-mono text-xs text-on-surface-variant">
+                            {f.evidence_ids.length
+                              ? f.evidence_ids.join(", ")
+                              : "— none recorded —"}
+                          </div>
+                        ) : (
+                          <ul className="flex flex-wrap gap-2">
+                            {linkedChunks.map((c) => (
+                              <li
+                                key={c.id}
+                                className="flex min-w-[240px] flex-1 basis-64 items-start gap-3 rounded border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-xs"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+                                    {c.source} · {c.section}
+                                  </div>
+                                  <div className="mt-0.5 font-semibold text-on-surface">
+                                    {c.title}
+                                  </div>
+                                  <p className="mt-1.5 leading-snug text-on-surface-variant">
+                                    {c.text}
+                                  </p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>

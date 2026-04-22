@@ -85,12 +85,6 @@
       "timestamp": "2026-04-17T09:12:09Z"
     },
     {
-      "tool": "persist_case_finding",
-      "summary": "Wrote CaseAssessment + 3 RiskFindings + 4 InvestigationSteps to Layer 3. Assessment ID: assess_20260417_0912_a1f3.",
-      "cypher_used": "MERGE (c:Company {node_id: $entity_id})\nCREATE (a:CaseAssessment {assessment_id: $assessment_id, verdict: $verdict, risk_score: $risk_score, agent: 'AMLAgent/claude-sonnet-4-6', created_at: datetime()})\nCREATE (c)-[:HAS_ASSESSMENT]->(a)",
-      "timestamp": "2026-04-17T09:12:11Z"
-    },
-    {
       "tool": "trace_evidence",
       "summary": "Retrieved the 3 cited typology chunks and 3 requirement sections linked to this assessment for the evidence panel.",
       "cited_chunks": ["ch_mas_626_6_4", "ch_mas_626_4_1", "ch_fatf_rec_24"],
