@@ -4,9 +4,9 @@ import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 
 const PRESETS = [
-  "Investigate Nielsen Enterprises Limited for beneficial owner opacity",
-  "Trace Jonathan Lim Wei Ming through the BSI Bank Geneva corridor",
-  "Any structuring behaviour linked to Mossack Fonseca intermediaries?",
+  "Who really owns Nielsen Enterprises Limited?",
+  "Why is Jonathan Lim Wei Ming moving money through a Swiss bank?",
+  "Are small repeated payments being used to hide a large transfer through Mossack Fonseca?",
 ];
 
 export default function QuestionBar({

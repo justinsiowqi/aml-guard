@@ -75,7 +75,7 @@ export default function InvestigatePage() {
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-on-surface-variant">
                 An agent traverses the entity graph, runs six anomaly patterns, and matches
-                behaviour to MAS Notice 626, FATF, and AUSTRAC typologies — returning a verdict
+                behaviour to MAS Notice 626 and FATF typologies — returning a verdict
                 with cited evidence.
               </p>
             </header>

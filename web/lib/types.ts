@@ -35,7 +35,7 @@ export interface Finding {
 
 export interface TypologyChunk {
   id: string;
-  source: "FATF" | "AUSTRAC" | "MAS Notice 626";
+  source: "FATF" | "MAS Notice 626";
   section: string;               // e.g. "para 6.4"
   title: string;                 // human-readable section title
   text: string;
