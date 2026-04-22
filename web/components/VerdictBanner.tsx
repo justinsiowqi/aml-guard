@@ -1,8 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Verdict } from "@/lib/types";
-import { ArrowRight, CheckCircle2, Circle, Scale, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  FileText,
+  Loader2,
+  Scale,
+  Send,
+  ShieldCheck,
+} from "lucide-react";
 import Sparkline from "./Sparkline";
 
 const VERDICT_META: Record<
@@ -40,16 +49,117 @@ const RISK_DECOMPOSITION = [
   { label: "Velocity",      value: 0.10 },
 ];
 
-type ChecklistItem = { id: string; label: string; hint: string };
+type ChecklistItem = {
+  id: string;
+  label: string;
+  hint: string;
+  thoughts: string[];
+  rationale: string;
+  phase: number;
+  fullWidth?: boolean;
+};
 
 const VERIFICATION_PROTOCOL: ChecklistItem[] = [
-  { id: "sanctions",   label: "Sanctions & watchlist screening", hint: "OFAC, UN, EU cross-checked" },
-  { id: "funds",       label: "Source of funds documented",      hint: "Origin traced and justified" },
-  { id: "ownership",   label: "Beneficial ownership confirmed",  hint: "UBO chain ≤ 25% verified" },
-  { id: "typology",    label: "Typology evidence reviewed",      hint: "Pattern matched to schema" },
-  { id: "jurisdiction",label: "Counterparty jurisdiction risk",  hint: "Corridor risk acknowledged" },
-  { id: "narrative",   label: "Case narrative drafted",          hint: "Findings & decision logged" },
+  {
+    id: "sanctions",
+    label: "Sanctions & watchlist screening",
+    hint: "OFAC, UN, EU cross-checked",
+    phase: 1,
+    fullWidth: true,
+    thoughts: [
+      "Querying OFAC SDN list…",
+      "Matching UN Consolidated list…",
+      "Cross-checking EU & MAS sanctions…",
+      "Verifying PEP & adverse-media coverage…",
+      "Resolving fuzzy-match candidates…",
+      "Adjudicating near-miss aliases…",
+      "Recording screening attestation…",
+    ],
+    rationale: "Screened OFAC, UN, EU, MAS — no hits.",
+  },
+  {
+    id: "funds",
+    label: "Source of funds documented",
+    hint: "Origin traced and justified",
+    phase: 2,
+    thoughts: [
+      "Tracing upstream accounts…",
+      "Fetching KYC refresh records…",
+      "Reconstructing settlement chain…",
+      "Validating source documentation…",
+      "Computing source-of-wealth score…",
+    ],
+    rationale: "Traced 3 upstream accounts; 2 flagged for docs.",
+  },
+  {
+    id: "typology",
+    label: "Typology evidence reviewed",
+    hint: "Pattern matched to schema",
+    phase: 2,
+    thoughts: [
+      "Scanning FATF typology schemas…",
+      "Comparing AUSTRAC rule set…",
+      "Matching behavioral patterns…",
+      "Checking MAS Notice 626 §3 alignment…",
+      "Computing schema match score…",
+    ],
+    rationale: "Matched FATF §4.2 (layering), 2 citations.",
+  },
+  {
+    id: "narrative",
+    label: "Case narrative drafted",
+    hint: "Findings & decision logged",
+    phase: 3,
+    fullWidth: true,
+    thoughts: [
+      "Compiling findings…",
+      "Citing MAS Notice 626 references…",
+      "Drafting analyst summary…",
+    ],
+    rationale: "Narrative compiled from 6 findings.",
+  },
 ];
+
+type ChecklistStatus = "pending" | "verifying" | "verified";
+
+type StageKey = "approval" | "filing" | "submission";
+type StageState = "pending" | "active" | "done";
+
+type StageDef = {
+  id: StageKey;
+  label: string;
+  Icon: typeof ShieldCheck;
+  messages: string[];
+  result: string;
+};
+
+const PIPELINE_STAGES: StageDef[] = [
+  {
+    id: "approval",
+    label: "Approval Agent",
+    Icon: ShieldCheck,
+    messages: ["Reviewing case file…", "Cross-checking verification log…"],
+    result: "Signed off · attestations valid",
+  },
+  {
+    id: "filing",
+    label: "Filing Agent",
+    Icon: FileText,
+    messages: ["Drafting SAR narrative…", "Citing MAS Notice 626 §3.2…"],
+    result: "Draft ready · 342 words",
+  },
+  {
+    id: "submission",
+    label: "MAS Submission",
+    Icon: Send,
+    messages: ["Transmitting to MAS portal…"],
+    result: "Submitted · MAS-STR-2026-0417",
+  },
+];
+
+const VERIFY_MSG_INTERVAL_MS = 900;
+const PIPELINE_MSG_MS = 700;
+const PIPELINE_STAGE_BUFFER_MS = 400;
 
 export default function VerdictBanner({
   verdict,
@@ -58,6 +168,7 @@ export default function VerdictBanner({
   txVelocity,
   handedOff,
   onHandoff,
+  onSarFiled,
 }: {
   verdict: Verdict;
   riskScore: number;
@@ -65,25 +176,104 @@ export default function VerdictBanner({
   txVelocity: number[];
   handedOff: boolean;
   onHandoff: () => void;
+  onSarFiled: () => void;
 }) {
   const meta = VERDICT_META[verdict];
   const maxTx = Math.max(...txVelocity, 1);
   const maxDecomp = Math.max(...RISK_DECOMPOSITION.map((d) => d.value));
 
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [statuses, setStatuses] = useState<Record<string, ChecklistStatus>>(() =>
+    Object.fromEntries(VERIFICATION_PROTOCOL.map((i) => [i.id, "pending"])) as Record<
+      string,
+      ChecklistStatus
+    >,
+  );
+  const [thoughtMsg, setThoughtMsg] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const phases = new Map<number, ChecklistItem[]>();
+    VERIFICATION_PROTOCOL.forEach((item) => {
+      const arr = phases.get(item.phase) ?? [];
+      arr.push(item);
+      phases.set(item.phase, arr);
+    });
+
+    let t = 0;
+    Array.from(phases.entries())
+      .sort(([a], [b]) => a - b)
+      .forEach(([, items]) => {
+        let phaseMax = 0;
+        items.forEach((item) => {
+          const duration = item.thoughts.length * VERIFY_MSG_INTERVAL_MS;
+          phaseMax = Math.max(phaseMax, duration);
+          const startAt = t;
+          timers.push(
+            setTimeout(() => {
+              setStatuses((s) => ({ ...s, [item.id]: "verifying" }));
+              setThoughtMsg((m) => ({ ...m, [item.id]: item.thoughts[0] }));
+            }, startAt),
+          );
+          item.thoughts.forEach((msg, mIdx) => {
+            if (mIdx === 0) return;
+            timers.push(
+              setTimeout(() => {
+                setThoughtMsg((m) => ({ ...m, [item.id]: msg }));
+              }, startAt + mIdx * VERIFY_MSG_INTERVAL_MS),
+            );
+          });
+          timers.push(
+            setTimeout(() => {
+              setStatuses((s) => ({ ...s, [item.id]: "verified" }));
+            }, startAt + duration),
+          );
+        });
+        t += phaseMax;
+      });
+    return () => timers.forEach(clearTimeout);
+  }, []);
 
   const total = VERIFICATION_PROTOCOL.length;
-  const done = checked.size;
-  const complete = done === total;
+  const done = Object.values(statuses).filter((s) => s === "verified").length;
+  const allVerified = done === total;
 
-  const toggle = (id: string) => {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const [stageStates, setStageStates] = useState<Record<StageKey, StageState>>({
+    approval: "pending",
+    filing: "pending",
+    submission: "pending",
+  });
+  const [stageMessage, setStageMessage] = useState<Record<StageKey, string>>({
+    approval: "",
+    filing: "",
+    submission: "",
+  });
+
+  function approveAndEscalate() {
+    if (handedOff) return;
+    onHandoff();
+    let t = 0;
+    PIPELINE_STAGES.forEach((stage) => {
+      setTimeout(() => {
+        setStageStates((s) => ({ ...s, [stage.id]: "active" }));
+        setStageMessage((m) => ({ ...m, [stage.id]: stage.messages[0] }));
+      }, t);
+      stage.messages.forEach((msg, mIdx) => {
+        if (mIdx === 0) return;
+        setTimeout(() => {
+          setStageMessage((m) => ({ ...m, [stage.id]: msg }));
+        }, t + mIdx * PIPELINE_MSG_MS);
+      });
+      t += stage.messages.length * PIPELINE_MSG_MS;
+      setTimeout(() => {
+        setStageStates((s) => ({ ...s, [stage.id]: "done" }));
+        setStageMessage((m) => ({ ...m, [stage.id]: stage.result }));
+      }, t);
+      t += PIPELINE_STAGE_BUFFER_MS;
     });
-  };
+    setTimeout(() => onSarFiled(), t);
+  }
+
+  const canApprove = allVerified && !handedOff;
 
   return (
     <div className="rounded border border-surface-container bg-surface-container-lowest p-6">
@@ -150,11 +340,14 @@ export default function VerdictBanner({
               <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                 <ShieldCheck size={14} strokeWidth={2} className="text-primary" />
                 Verification Protocol
+                <span className="ml-1 rounded-sm bg-surface-container-high px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wider text-on-surface-variant">
+                  AGENT-RUN
+                </span>
               </span>
               <div className="flex items-center gap-2">
                 <div className="h-1 w-24 overflow-hidden rounded-full bg-surface-container-high">
                   <div
-                    className={`h-full rounded-full transition-all ${complete ? "bg-primary" : BAR_TONE[meta.tone]}`}
+                    className={`h-full rounded-full transition-all duration-500 ${allVerified ? "bg-primary" : BAR_TONE[meta.tone]}`}
                     style={{ width: `${(done / total) * 100}%` }}
                   />
                 </div>
@@ -166,45 +359,60 @@ export default function VerdictBanner({
 
             <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 md:grid-cols-2">
               {VERIFICATION_PROTOCOL.map((item) => {
-                const isChecked = checked.has(item.id);
+                const status = statuses[item.id];
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => toggle(item.id)}
-                    disabled={handedOff}
-                    className={`group flex items-start gap-2.5 rounded px-2 py-1.5 text-left transition-colors hover:bg-surface-container-low disabled:cursor-not-allowed disabled:opacity-60 ${
-                      isChecked ? "bg-surface-container-low" : ""
-                    }`}
+                    className={`flex items-start gap-2.5 rounded px-2 py-1.5 transition-colors ${
+                      item.fullWidth ? "md:col-span-2" : ""
+                    } ${status === "verified" ? "bg-surface-container-low" : ""}`}
                   >
-                    {isChecked ? (
+                    {status === "verified" ? (
                       <CheckCircle2
                         size={16}
                         strokeWidth={2.25}
                         className="mt-0.5 shrink-0 text-primary"
                       />
+                    ) : status === "verifying" ? (
+                      <Loader2
+                        size={16}
+                        strokeWidth={2}
+                        className="mt-0.5 shrink-0 animate-spin text-primary"
+                      />
                     ) : (
                       <Circle
                         size={16}
                         strokeWidth={1.75}
-                        className="mt-0.5 shrink-0 text-outline-variant group-hover:text-on-surface-variant"
+                        className="mt-0.5 shrink-0 text-outline-variant"
                       />
                     )}
                     <div className="min-w-0">
                       <div
                         className={`text-[12.5px] font-medium leading-tight ${
-                          isChecked
-                            ? "text-on-surface-variant line-through decoration-on-surface-variant/40"
+                          status === "pending"
+                            ? "text-on-surface-variant"
                             : "text-on-surface"
                         }`}
                       >
                         {item.label}
                       </div>
-                      <div className="mt-0.5 text-[11px] leading-tight text-on-surface-variant/70">
-                        {item.hint}
+                      <div
+                        className={`mt-0.5 text-[11px] leading-tight ${
+                          status === "verifying"
+                            ? "italic text-primary"
+                            : status === "verified"
+                            ? "text-on-surface-variant"
+                            : "text-on-surface-variant/70"
+                        }`}
+                      >
+                        {status === "pending"
+                          ? item.hint
+                          : status === "verifying"
+                          ? thoughtMsg[item.id] ?? "verifying…"
+                          : item.rationale}
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -212,21 +420,96 @@ export default function VerdictBanner({
             <div className="mt-4 flex items-center justify-between">
               <span className="text-[11px] text-on-surface-variant">
                 {handedOff
-                  ? "Case relayed — awaiting Approval Agent sign-off."
-                  : complete
-                  ? "All checks verified. Ready for agent handoff."
-                  : `Complete ${total - done} more ${total - done === 1 ? "check" : "checks"} to enable handoff.`}
+                  ? "Approved by analyst · agents handling downstream filing."
+                  : allVerified
+                  ? "All checks cleared. Analyst sign-off required before agent handoff."
+                  : "Agent verifying — attestations will appear as each check clears."}
               </span>
               <button
                 type="button"
-                onClick={onHandoff}
-                disabled={!complete || handedOff}
+                onClick={approveAndEscalate}
+                disabled={!canApprove}
                 className="flex h-9 items-center gap-2 rounded bg-[#1e40af] px-4 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               >
-                {handedOff ? "Relayed to Approval Agent" : "Relay to Approval Agent"}
+                {handedOff ? "Approved & Escalated" : "Approve & Escalate"}
                 <ArrowRight size={14} strokeWidth={2} />
               </button>
             </div>
+
+            {handedOff && (
+              <div className="mt-4 border-t border-surface-container-high pt-4">
+                <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  <Send size={14} strokeWidth={2} className="text-primary" />
+                  Downstream Agent Pipeline
+                </div>
+
+                <div className="flex items-stretch gap-2">
+                  {PIPELINE_STAGES.map((stage, idx) => {
+                    const state = stageStates[stage.id];
+                    const Icon = stage.Icon;
+                    const toneClass =
+                      state === "done"
+                        ? "border-primary/60 bg-primary-fixed/40"
+                        : state === "active"
+                        ? "border-primary/50 bg-primary-fixed/20 shadow-[0_0_0_3px_rgba(30,64,175,0.08)]"
+                        : "border-outline-variant/40 bg-surface-container-low";
+                    const iconClass =
+                      state === "done"
+                        ? "text-primary"
+                        : state === "active"
+                        ? "text-primary animate-pulse"
+                        : "text-on-surface-variant/60";
+                    return (
+                      <div key={stage.id} className="flex min-w-0 flex-1 items-center gap-2">
+                        <div
+                          className={`flex min-w-0 flex-1 flex-col gap-1 rounded border px-3 py-2 transition-all ${toneClass}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {state === "active" ? (
+                              <Loader2 size={14} strokeWidth={2} className={`shrink-0 animate-spin ${iconClass}`} />
+                            ) : state === "done" ? (
+                              <CheckCircle2 size={14} strokeWidth={2.25} className={`shrink-0 ${iconClass}`} />
+                            ) : (
+                              <Icon size={14} strokeWidth={2} className={`shrink-0 ${iconClass}`} />
+                            )}
+                            <span
+                              className={`truncate text-[12px] font-semibold ${
+                                state === "pending" ? "text-on-surface-variant" : "text-on-surface"
+                              }`}
+                            >
+                              {stage.label}
+                            </span>
+                          </div>
+                          <div
+                            className={`min-h-[28px] break-words font-mono text-[10.5px] leading-snug ${
+                              state === "active"
+                                ? "text-primary"
+                                : state === "done"
+                                ? "text-on-surface-variant"
+                                : "text-on-surface-variant/50"
+                            }`}
+                          >
+                            {stageMessage[stage.id] || (state === "pending" ? "queued" : "")}
+                          </div>
+                        </div>
+                        {idx < PIPELINE_STAGES.length - 1 && (
+                          <ArrowRight
+                            size={14}
+                            strokeWidth={2}
+                            className={`shrink-0 ${
+                              stageStates[PIPELINE_STAGES[idx + 1].id] === "pending" &&
+                              state !== "done"
+                                ? "text-outline-variant/40"
+                                : "text-primary"
+                            }`}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

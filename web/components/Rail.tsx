@@ -57,7 +57,6 @@ export default function Rail() {
           />
           <div className="text-xs">
             <div className="font-medium text-on-surface">Agent ID: 8842</div>
-            <div className="font-mono text-on-surface-variant">SYS.OK</div>
           </div>
         </div>
       </div>

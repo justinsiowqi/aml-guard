@@ -95,7 +95,6 @@ export default function InvestigatePage() {
               phase={phase}
               handedOff={handedOff}
               sarFiled={sarFiled}
-              onFileSAR={() => setSarFiled(true)}
             />
 
             <div className="mb-6 grid grid-cols-12 gap-6">
@@ -108,6 +107,7 @@ export default function InvestigatePage() {
                     txVelocity={assessment.tx_velocity}
                     handedOff={handedOff}
                     onHandoff={() => setHandedOff(true)}
+                    onSarFiled={() => setSarFiled(true)}
                   />
                 ) : (
                   <div className="flex h-full min-h-[220px] items-center justify-center rounded border border-dashed border-outline-variant/40 bg-surface-container-lowest p-8 text-sm text-on-surface-variant">
