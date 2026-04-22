@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 
 const PRESETS = [
   "Who really owns Nielsen Enterprises Limited?",
-  "Why is Jonathan Lim Wei Ming moving money through a Swiss bank?",
+  "Which customers are routing money through Swiss banks?",
   "Are small repeated payments being used to hide a large transfer through Mossack Fonseca?",
 ];
 
