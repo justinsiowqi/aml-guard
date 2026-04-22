@@ -19,7 +19,7 @@ PRE_RUN_RESULT_CHAR_LIMIT = 4096
 
 MAX_RETRY_SECONDS = 120
 
-EMBEDDING_MODEL = "bge-large-en-v1.5"
+EMBEDDING_MODEL = "BAAI/bge-large-en-v1.5"
 
 # Single agent — max agentic loop iterations and context window pairs.
 AML_MAX_ITERATIONS   = 14
