@@ -4,15 +4,45 @@ import type { CaseAssessment, SubgraphNode } from "@/lib/types";
 type Pos = { x: number; y: number };
 type NodeShape = "circle" | "rect" | "rect-dashed" | "pill" | "diamond";
 
-const POS: Record<string, Pos> = {
-  p_jonathan_lim: { x: 80,  y: 115 },
-  i_mossack:      { x: 80,  y: 295 },
-  c_nielsen:      { x: 420, y: 115 },
-  c_nescoll:      { x: 420, y: 205 },
-  c_hangon:       { x: 420, y: 295 },
-  a_bsi_geneva:   { x: 600, y: 60  },
-  j_bvi:          { x: 600, y: 245 },
-};
+function computeRadialLayout(
+  nodes: SubgraphNode[],
+  edges: { source: string; target: string }[],
+  width: number,
+  height: number,
+): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  if (nodes.length === 0) return positions;
+
+  // Pick the seed: the node with the highest degree (typically the subject).
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  const seed =
+    nodes.slice().sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))[0];
+
+  const cx = width / 2;
+  const cy = height / 2;
+  positions[seed.id] = { x: cx, y: cy };
+
+  const others = nodes.filter((n) => n.id !== seed.id);
+  if (others.length === 0) return positions;
+
+  // Radial placement around the seed. Tuned for the 700×370 viewBox so labels
+  // don't clip the SVG bounds at typical neighbour counts (≤12).
+  const radius = Math.min(width, height) * 0.36;
+  const angleStep = (2 * Math.PI) / others.length;
+  const angleOffset = -Math.PI / 2; // start at the top
+  others.forEach((n, i) => {
+    const angle = angleOffset + i * angleStep;
+    positions[n.id] = {
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    };
+  });
+  return positions;
+}
 
 const RECT_W = 150;
 const RECT_H = 44;
@@ -170,6 +200,8 @@ function ShapeSwatch({ shape }: { shape: NodeShape }) {
 export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment["subgraph"] }) {
   const W = 700;
   const H = 370;
+
+  const POS = computeRadialLayout(subgraph.nodes, subgraph.edges, W, H);
 
   const focusEdge = subgraph.edges.find((e) => e.kind.includes("WIRE")) ?? subgraph.edges[0];
   const focusCounterparty = subgraph.nodes.find((n) => n.id === focusEdge?.source);

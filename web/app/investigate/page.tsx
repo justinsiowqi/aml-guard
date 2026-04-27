@@ -7,6 +7,7 @@ import QuestionBar from "@/components/QuestionBar";
 import TopHeader from "@/components/TopHeader";
 import EntityHeader from "@/components/EntityHeader";
 import InvestigationStream from "@/components/InvestigationStream";
+import InvestigationLoading from "@/components/InvestigationLoading";
 import VerdictBanner from "@/components/VerdictBanner";
 import FindingsList from "@/components/FindingsList";
 import TypologyEvidence from "@/components/TypologyEvidence";
@@ -86,6 +87,10 @@ export default function InvestigatePage() {
               currentQuestion={question}
             />
           </div>
+        )}
+
+        {phase === "streaming" && !assessment && (
+          <InvestigationLoading question={question} />
         )}
 
         {phase !== "idle" && assessment && (

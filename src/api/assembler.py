@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.graph.connection import Neo4jConnection
+from src.mcp.schema import ANOMALY_REGISTRY
 from src.mcp.tools_impl import (
     detect_graph_anomalies,
     retrieve_typology_chunks,
@@ -52,19 +53,8 @@ def build_case_assessment(
     scope = seed.get("entity_name") or str(node_id)
     anomalies = detect_graph_anomalies(DEFAULT_PATTERNS, entity_id=scope, conn=conn)
 
-    chunks_payload: dict[str, Any] = {"chunks": []}
-    try:
-        chunks_payload = retrieve_typology_chunks(
-            query_text=question or "beneficial ownership opacity shell company",
-            typology_id="MAS-626",
-            top_k=5,
-            conn=conn,
-        )
-    except Exception as e:
-        logger.warning("retrieve_typology_chunks unavailable: %s", e)
-
     findings = _build_findings(anomalies)
-    typology_chunks = _build_typology_chunks(chunks_payload)
+    typology_chunks = _attach_evidence(findings, question, conn)
     nodes, edges = _build_subgraph(seed)
     verdict, risk_score = _score(findings)
     now = datetime.now(timezone.utc)
@@ -153,20 +143,63 @@ def _build_findings(anomalies: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _build_typology_chunks(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for c in payload.get("chunks") or []:
-        section_id = c.get("section_id") or ""
-        source = "MAS Notice 626" if section_id.startswith("MAS-626") else "FATF"
-        out.append({
-            "id": c.get("chunk_id") or "",
-            "source": source,
-            "section": f"para {c.get('paragraph')}" if c.get("paragraph") else section_id,
-            "title": section_id,
-            "text": c.get("text") or "",
-            "similarity_score": float(c.get("score") or 0.0),
-        })
-    return out
+def _attach_evidence(
+    findings: list[dict[str, Any]],
+    question: str,
+    conn: Neo4jConnection,
+) -> list[dict[str, Any]]:
+    """
+    Run a vector search per fired finding using the pattern's own description as
+    the query. Populate each finding's evidence_ids with the retrieved chunk_ids
+    and return a deduped global typology_chunks list. If no findings fire, fall
+    back to one query-based search so the UI still has some regulatory context.
+    """
+    chunks_by_id: dict[str, dict[str, Any]] = {}
+
+    targets: list[tuple[dict[str, Any] | None, str]] = []
+    if findings:
+        for f in findings:
+            pat = ANOMALY_REGISTRY.get(f["pattern_name"])
+            if pat is None:
+                continue
+            targets.append((f, pat.description))
+    else:
+        targets.append((None, question or "beneficial ownership opacity shell company"))
+
+    for finding, query_text in targets:
+        try:
+            payload = retrieve_typology_chunks(
+                query_text=query_text,
+                typology_id="MAS-626",
+                top_k=2,
+                conn=conn,
+            )
+        except Exception as e:
+            logger.warning("retrieve_typology_chunks failed for '%s': %s", query_text[:60], e)
+            continue
+
+        finding_chunk_ids: list[str] = []
+        for c in payload.get("chunks") or []:
+            chunk_id = c.get("chunk_id")
+            if not chunk_id:
+                continue
+            if chunk_id not in chunks_by_id:
+                section_id = c.get("section_id") or ""
+                source = "MAS Notice 626" if section_id.startswith("MAS-626") else "FATF"
+                chunks_by_id[chunk_id] = {
+                    "id": chunk_id,
+                    "source": source,
+                    "section": f"para {c.get('paragraph')}" if c.get("paragraph") else section_id,
+                    "title": section_id,
+                    "text": c.get("text") or "",
+                    "similarity_score": float(c.get("score") or 0.0),
+                }
+            finding_chunk_ids.append(chunk_id)
+
+        if finding is not None:
+            finding["evidence_ids"] = finding_chunk_ids
+
+    return list(chunks_by_id.values())
 
 
 def _build_steps(
@@ -191,7 +224,7 @@ def _build_steps(
         },
         {
             "tool": "retrieve_typology_chunks",
-            "summary": f"Vector search over MAS-626 corpus for: {question[:60] or '(default query)'}.",
+            "summary": "Vector search over MAS-626 driven by pattern descriptions of each finding.",
             "timestamp": ts(2),
         },
     ]
