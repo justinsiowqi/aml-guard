@@ -13,6 +13,10 @@ pyyaml>=6.0.0
 streamlit>=1.35.0
 plotly>=5.22.0
 
+# HTTP API (frontend wire-up)
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+
 # Notebook
 jupyter>=1.1.0
 jupyterlab>=4.0.0
