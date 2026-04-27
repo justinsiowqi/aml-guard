@@ -1,6 +1,5 @@
 # Core AI & Graph
-h2ogpte==1.6.55
-neo4j>=5.18.0
+h2ogpte==1.6.59
 python-dotenv>=1.0.0
 
 # Data loading
