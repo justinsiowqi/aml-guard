@@ -12,6 +12,19 @@
   "risk_score": 0.87,
   "headline": "Shell-company opacity with structuring signal: four inbound wires under SGD 500K in 22 days via BVI entities set up by Mossack Fonseca.",
   "tx_velocity": [0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  "risk_decomposition": [
+    { "label": "Ownership Opacity",   "value": 0.85 },
+    { "label": "Jurisdiction",        "value": 0.92 },
+    { "label": "Intermediary",        "value": 0.78 },
+    { "label": "Address Clustering",  "value": 0.45 }
+  ],
+  "connection_focus": {
+    "counterparty_label": "Mossack Fonseca",
+    "counterparty_type": "Intermediary",
+    "risk_tier": "HIGH",
+    "relationship_summary": "Intermediary of",
+    "link_count": 1
+  },
   "findings": [
     {
       "id": "f_structuring",

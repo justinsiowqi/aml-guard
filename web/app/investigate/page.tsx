@@ -142,6 +142,7 @@ export default function InvestigatePage() {
                     riskScore={assessment.risk_score}
                     headline={assessment.headline}
                     txVelocity={assessment.tx_velocity}
+                    riskDecomposition={assessment.risk_decomposition}
                     caseId={assessment.case_id}
                     handedOff={handedOff}
                     onHandoff={() => setHandedOff(true)}
@@ -176,7 +177,10 @@ export default function InvestigatePage() {
                   </div>
                 </div>
 
-                <EntitySubgraph subgraph={assessment.subgraph} />
+                <EntitySubgraph
+                  subgraph={assessment.subgraph}
+                  connectionFocus={assessment.connection_focus}
+                />
               </>
             )}
           </div>

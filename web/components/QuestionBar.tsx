@@ -5,8 +5,8 @@ import { ArrowRight } from "lucide-react";
 
 const PRESETS = [
   "Who really owns Nielsen Enterprises Limited?",
-  "Which customers are routing money through Swiss banks?",
-  "Are small repeated payments being used to hide a large transfer through Mossack Fonseca?",
+  "Map Minerva Trust's offshore client network for shell-company patterns.",
+  "Which BVI shell companies share officers or registered agents with Nielsen?",
 ];
 
 export default function QuestionBar({

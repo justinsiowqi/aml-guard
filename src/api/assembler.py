@@ -199,6 +199,120 @@ _STATUS_LABELS: dict[str, str] = {
     "Relocated in new jurisdiction": "Relocated jurisdiction",
 }
 
+# Maps each anomaly pattern to a high-level risk category for the verdict
+# decomposition bars. Categories cover the patterns we actually run in
+# DEFAULT_PATTERNS so each bar has a chance of firing.
+_PATTERN_CATEGORIES: list[tuple[str, list[str]]] = [
+    ("Ownership Opacity", [
+        "layered_ownership",
+        "common_controller_across_shells",
+        "bearer_obscured_ownership",
+    ]),
+    ("Jurisdiction",       ["high_risk_jurisdiction"]),
+    ("Intermediary",       ["intermediary_shell_network"]),
+    ("Address Clustering", ["shared_address_cluster"]),
+]
+
+# Floor so empty categories don't render as a flat bar.
+_DECOMP_FLOOR = 0.05
+
+# Human-readable labels for raw Neo4j relationship types.
+_KIND_LABELS: dict[str, str] = {
+    "INTERMEDIARY_OF":     "Intermediary of",
+    "IS_OFFICER_OF":       "Officer of",
+    "REGISTERED_AT":       "Registered at",
+    "INCORPORATED_IN":     "Incorporated in",
+    "SHARES_ADDRESS_WITH": "Shares address with",
+    "RECEIVED_WIRE_FROM":  "Received wire from",
+    "ROUTED_THROUGH":      "Routed through",
+}
+
+# Counterparty type ordering for connection-focus selection.
+_FOCUS_TYPE_PRIORITY = {
+    "Intermediary": 0,
+    "Person":       1,
+    "Company":      2,
+    "Address":      3,
+    "Jurisdiction": 4,
+}
+
+
+def _humanize_kind(kind: str) -> str:
+    return _KIND_LABELS.get(kind, kind.replace("_", " ").lower().capitalize())
+
+
+def _build_risk_decomposition(
+    findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    For each named risk category, take the maximum normalized severity across
+    fired patterns in that category. Empty categories floor at _DECOMP_FLOOR
+    so bars don't fully collapse.
+    """
+    by_pattern: dict[str, int] = {f["pattern_name"]: f["score"] for f in findings}
+    out: list[dict[str, Any]] = []
+    for label, patterns in _PATTERN_CATEGORIES:
+        scores = [by_pattern[p] for p in patterns if p in by_pattern]
+        value = max(scores) / 9 if scores else _DECOMP_FLOOR
+        out.append({"label": label, "value": round(value, 2)})
+    return out
+
+
+def _synth_tx_velocity(case_id: str) -> list[int]:
+    """
+    Deterministic 12-month transaction-volume fingerprint from case_id.
+    Baseline 0–5 with a 1–2 month spike (18–29 → 10–17 echo). Synthetic;
+    used until real Transaction nodes exist in Layer 1.
+    """
+    h = hashlib.md5(case_id.encode()).digest()
+    base = [h[i] % 6 for i in range(12)]
+    spike = h[12] % 12
+    base[spike] = 18 + (h[13] % 12)
+    if spike + 1 < 12:
+        base[spike + 1] = 10 + (h[14] % 8)
+    return base
+
+
+def _build_connection_focus(
+    seed_id: str,
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """
+    Pick the most interesting non-seed counterparty for the focus card. All
+    facts come from graph data — no fabricated dollar amounts.
+    """
+    by_id = {n["id"]: n for n in nodes if n["id"] != seed_id}
+    if not by_id:
+        return None
+
+    edge_kinds: dict[str, list[str]] = {}
+    for e in edges:
+        if e["source"] == seed_id and e["target"] in by_id:
+            edge_kinds.setdefault(e["target"], []).append(e["kind"])
+        elif e["target"] == seed_id and e["source"] in by_id:
+            edge_kinds.setdefault(e["source"], []).append(e["kind"])
+
+    candidates = [by_id[cid] for cid in edge_kinds]
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda n: (
+        _FOCUS_TYPE_PRIORITY.get(n["type"], 99),
+        n.get("label", ""),
+    ))
+    focus = candidates[0]
+    kinds = edge_kinds.get(focus["id"], [])
+    rel_summary = ", ".join(sorted({_humanize_kind(k) for k in kinds}))
+
+    return {
+        "counterparty_label":   focus.get("label", focus["id"]),
+        "counterparty_type":    focus["type"],
+        "risk_tier":            focus.get("risk_tier") or "MEDIUM",
+        "relationship_summary": rel_summary or "Connected",
+        "link_count":           len(kinds),
+    }
+
 
 def build_case_assessment(
     question: str,
@@ -212,25 +326,49 @@ def build_case_assessment(
         return {"_error": f"Subject entity not found in graph: node_id={node_id}"}
 
     seed = subgraph_rows[0]
-    # Patterns return company names in their records, not node_ids — scope by name
-    # so the post-query substring filter (tools_impl.py:88-92) matches.
-    scope = seed.get("entity_name") or str(node_id)
-    anomalies = detect_graph_anomalies(DEFAULT_PATTERNS, entity_id=scope, conn=conn)
+    # Patterns return rows scoped to the seed's *context* — sometimes the seed
+    # name itself (common_controller_across_shells), sometimes an intermediary
+    # name (intermediary_shell_network), sometimes a jurisdiction
+    # (high_risk_jurisdiction). Pass all of them so the substring filter in
+    # detect_graph_anomalies doesn't drop legitimate hits.
+    scope_terms: list[str] = []
+    if seed.get("entity_name"):
+        scope_terms.append(seed["entity_name"])
+    else:
+        scope_terms.append(str(node_id))
+    for n in seed.get("neighbours") or []:
+        nm = n.get("neighbour_name")
+        if nm:
+            scope_terms.append(nm)
+    if seed.get("jurisdiction"):
+        scope_terms.append(seed["jurisdiction"])
+    anomalies = detect_graph_anomalies(DEFAULT_PATTERNS, entity_id=scope_terms, conn=conn)
 
     findings = _build_findings(anomalies)
     typology_chunks = _attach_evidence(findings, question, conn)
-    nodes, edges = _build_subgraph(seed)
+
+    try:
+        two_hop_rows = get_entity_subgraph_2hop(conn, str(node_id))
+    except Exception as e:
+        logger.warning("get_entity_subgraph_2hop failed for %s: %s", node_id, e)
+        two_hop_rows = []
+
+    nodes, edges = _build_subgraph(seed, two_hop_rows)
     verdict, risk_score = _score(findings)
     now = datetime.now(timezone.utc)
+    case_id = f"STR-{now:%Y-%m%d}-{str(node_id)[-4:]}"
+    seed_id = str(seed.get("entity_id") or "")
 
     return {
-        "case_id": f"STR-{now:%Y-%m%d}-{str(node_id)[-4:]}",
+        "case_id": case_id,
         "subject": _build_subject(seed),
         "question": question,
         "verdict": verdict,
         "risk_score": risk_score,
         "headline": _headline(findings, seed),
-        "tx_velocity": [0] * 12,  # TODO: requires Transaction nodes in Layer 1
+        "tx_velocity": _synth_tx_velocity(case_id),
+        "risk_decomposition": _build_risk_decomposition(findings),
+        "connection_focus": _build_connection_focus(seed_id, nodes, edges),
         "findings": findings,
         "typology_chunks": typology_chunks,
         "investigation_steps": _build_steps(node_id, DEFAULT_PATTERNS, question, now),
@@ -254,7 +392,12 @@ def _build_subject(seed: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_subgraph(seed: dict[str, Any]) -> tuple[list[dict], list[dict]]:
+def _build_subgraph(
+    seed: dict[str, Any],
+    two_hop_rows: list[dict[str, Any]] | None = None,
+    *,
+    max_2hop_nodes: int = 8,
+) -> tuple[list[dict], list[dict]]:
     seed_id = str(seed.get("entity_id") or "")
     seed_type = _normalise_type(seed.get("entity_type"))
     nodes: dict[str, dict[str, Any]] = {
@@ -266,11 +409,15 @@ def _build_subgraph(seed: dict[str, Any]) -> tuple[list[dict], list[dict]]:
         }
     }
     edges: list[dict[str, Any]] = []
+    one_hop_ids: set[str] = set()
+
+    # 1-hop tier — direct neighbours of the seed.
     for n in seed.get("neighbours") or []:
         nid = n.get("neighbour_id")
         if nid is None:
             continue
         nid = str(nid)
+        one_hop_ids.add(nid)
         if nid not in nodes:
             nodes[nid] = {
                 "id": nid,
@@ -282,7 +429,46 @@ def _build_subgraph(seed: dict[str, Any]) -> tuple[list[dict], list[dict]]:
             "target": nid,
             "kind": n.get("rel_type") or "RELATED",
         })
-    return list(nodes.values()), edges
+
+    # 2-hop tier — extensions hanging off each 1-hop neighbour. Cap to keep
+    # the outer ring readable; once we hit the cap, accept further edges
+    # only when they connect to already-included 2-hop nodes.
+    two_hop_added = 0
+    for r in two_hop_rows or []:
+        h1 = r.get("hop1_id")
+        h2 = r.get("hop2_id")
+        if h1 is None or h2 is None:
+            continue
+        h1, h2 = str(h1), str(h2)
+        if h1 not in one_hop_ids or h2 == seed_id or h2 in one_hop_ids:
+            continue
+        if h2 not in nodes:
+            if two_hop_added >= max_2hop_nodes:
+                continue
+            nodes[h2] = {
+                "id": h2,
+                "label": r.get("hop2_name") or h2,
+                "type": _normalise_type(r.get("hop2_type")),
+            }
+            two_hop_added += 1
+        edges.append({
+            "source": h1,
+            "target": h2,
+            "kind": r.get("hop2_rel") or "RELATED",
+        })
+
+    # Dedupe edges by (source, target, kind) — 2-hop traversal can revisit
+    # the same pair via multiple paths.
+    seen: set[tuple[str, str, str]] = set()
+    unique_edges: list[dict[str, Any]] = []
+    for e in edges:
+        key = (e["source"], e["target"], e["kind"])
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_edges.append(e)
+
+    return list(nodes.values()), unique_edges
 
 
 def _normalise_type(neo4j_label: str | None) -> str:

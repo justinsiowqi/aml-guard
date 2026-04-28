@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Verdict } from "@/lib/types";
+import type { RiskDecompositionBar, Verdict } from "@/lib/types";
 import {
   ArrowRight,
   CheckCircle2,
@@ -41,13 +41,6 @@ const BAR_TONE = {
   warning: "bg-secondary",
   success: "bg-primary",
 };
-
-const RISK_DECOMPOSITION = [
-  { label: "Jurisdiction",  value: 0.28 },
-  { label: "Structuring",   value: 0.31 },
-  { label: "Intermediary",  value: 0.15 },
-  { label: "Velocity",      value: 0.10 },
-];
 
 type ChecklistItem = {
   id: string;
@@ -166,6 +159,7 @@ export default function VerdictBanner({
   riskScore,
   headline,
   txVelocity,
+  riskDecomposition,
   caseId,
   handedOff,
   onHandoff,
@@ -175,6 +169,7 @@ export default function VerdictBanner({
   riskScore: number;
   headline: string;
   txVelocity: number[];
+  riskDecomposition: RiskDecompositionBar[];
   caseId?: string;
   handedOff: boolean;
   onHandoff: () => void;
@@ -182,7 +177,7 @@ export default function VerdictBanner({
 }) {
   const meta = VERDICT_META[verdict];
   const maxTx = Math.max(...txVelocity, 1);
-  const maxDecomp = Math.max(...RISK_DECOMPOSITION.map((d) => d.value));
+  const maxDecomp = Math.max(...riskDecomposition.map((d) => d.value), 0.01);
 
   const [statuses, setStatuses] = useState<Record<string, ChecklistStatus>>(() =>
     Object.fromEntries(VERIFICATION_PROTOCOL.map((i) => [i.id, "pending"])) as Record<
@@ -308,7 +303,7 @@ export default function VerdictBanner({
                 Risk Decomposition
               </div>
               <div className="space-y-1.5">
-                {RISK_DECOMPOSITION.map((d) => (
+                {riskDecomposition.map((d) => (
                   <div key={d.label} className="flex items-center gap-3 text-xs">
                     <span className="w-24 shrink-0 text-on-surface-variant">{d.label}</span>
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-container-high">

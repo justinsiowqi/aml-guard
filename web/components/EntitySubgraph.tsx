@@ -1,5 +1,5 @@
 import { Share2 } from "lucide-react";
-import type { CaseAssessment, SubgraphNode } from "@/lib/types";
+import type { CaseAssessment, ConnectionFocus, SubgraphNode } from "@/lib/types";
 
 type Pos = { x: number; y: number };
 type NodeShape = "circle" | "rect" | "rect-dashed" | "pill" | "diamond";
@@ -13,7 +13,6 @@ function computeRadialLayout(
   const positions: Record<string, Pos> = {};
   if (nodes.length === 0) return positions;
 
-  // Pick the seed: the node with the highest degree (typically the subject).
   const degree = new Map<string, number>();
   for (const e of edges) {
     degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
@@ -26,21 +25,46 @@ function computeRadialLayout(
   const cy = height / 2;
   positions[seed.id] = { x: cx, y: cy };
 
+  // Partition non-seed nodes into 1-hop (directly connected to seed) and
+  // 2-hop (reachable only through a 1-hop intermediate).
+  const oneHopIds = new Set<string>();
+  for (const e of edges) {
+    if (e.source === seed.id) oneHopIds.add(e.target);
+    else if (e.target === seed.id) oneHopIds.add(e.source);
+  }
   const others = nodes.filter((n) => n.id !== seed.id);
-  if (others.length === 0) return positions;
+  const oneHop = others.filter((n) => oneHopIds.has(n.id));
+  const twoHop = others.filter((n) => !oneHopIds.has(n.id));
 
-  // Radial placement around the seed. Tuned for the 700×370 viewBox so labels
-  // don't clip the SVG bounds at typical neighbour counts (≤12).
-  const radius = Math.min(width, height) * 0.36;
-  const angleStep = (2 * Math.PI) / others.length;
-  const angleOffset = -Math.PI / 2; // start at the top
-  others.forEach((n, i) => {
-    const angle = angleOffset + i * angleStep;
-    positions[n.id] = {
-      x: cx + radius * Math.cos(angle),
-      y: cy + radius * Math.sin(angle),
-    };
-  });
+  const minDim = Math.min(width, height);
+  const innerRadius = minDim * 0.26;
+  const outerRadius = minDim * 0.45;
+
+  if (oneHop.length > 0) {
+    const step = (2 * Math.PI) / oneHop.length;
+    const offset = -Math.PI / 2;
+    oneHop.forEach((n, i) => {
+      const angle = offset + i * step;
+      positions[n.id] = {
+        x: cx + innerRadius * Math.cos(angle),
+        y: cy + innerRadius * Math.sin(angle),
+      };
+    });
+  }
+
+  if (twoHop.length > 0) {
+    const step = (2 * Math.PI) / twoHop.length;
+    // Half-step offset so outer-ring nodes sit between inner-ring ones.
+    const offset = -Math.PI / 2 + step / 2;
+    twoHop.forEach((n, i) => {
+      const angle = offset + i * step;
+      positions[n.id] = {
+        x: cx + outerRadius * Math.cos(angle),
+        y: cy + outerRadius * Math.sin(angle),
+      };
+    });
+  }
+
   return positions;
 }
 
@@ -197,14 +221,23 @@ function ShapeSwatch({ shape }: { shape: NodeShape }) {
   );
 }
 
-export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment["subgraph"] }) {
+const FOCUS_RISK_PILL: Record<"HIGH" | "MEDIUM" | "LOW", string> = {
+  HIGH:   "bg-error-container text-on-error-container",
+  MEDIUM: "bg-secondary-fixed text-on-secondary-fixed",
+  LOW:    "bg-primary-fixed text-on-primary-fixed",
+};
+
+export default function EntitySubgraph({
+  subgraph,
+  connectionFocus,
+}: {
+  subgraph: CaseAssessment["subgraph"];
+  connectionFocus: ConnectionFocus | null;
+}) {
   const W = 700;
   const H = 370;
 
   const POS = computeRadialLayout(subgraph.nodes, subgraph.edges, W, H);
-
-  const focusEdge = subgraph.edges.find((e) => e.kind.includes("WIRE")) ?? subgraph.edges[0];
-  const focusCounterparty = subgraph.nodes.find((n) => n.id === focusEdge?.source);
 
   const presentKinds = Array.from(new Set(subgraph.edges.map((e) => e.kind)));
   const presentShapes = Array.from(new Set(subgraph.nodes.map((n) => TYPE_SHAPE[n.type])));
@@ -381,24 +414,36 @@ export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment[
           </div>
         </div>
 
-        {focusCounterparty && (
+        {connectionFocus && (
           <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
             <div className="mb-2 border-b border-surface-container-high pb-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
               Connection Focus
             </div>
-            <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="min-w-0 truncate text-sm font-semibold text-[#191c1d]">
-                {focusCounterparty.label}
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${FOCUS_RISK_PILL[connectionFocus.risk_tier]}`}
+              >
+                {connectionFocus.risk_tier}
               </span>
-              <span className="shrink-0 font-mono text-[11px] text-[#ba1a1a]">Risk: 0.89</span>
+              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+                {connectionFocus.counterparty_type}
+              </span>
             </div>
-            <div className="mb-3 text-xs text-[#444653]">
-              Directional flow: <span className="font-medium text-[#191c1d]">Outbound</span>
+            <div className="mb-3 break-words text-sm font-semibold leading-tight text-[#191c1d]">
+              {connectionFocus.counterparty_label}
             </div>
-            <div className="font-mono text-base font-bold text-[#191c1d]">SGD 1,976,600</div>
-            <div className="mt-1 text-[11px] italic text-[#444653]">
-              Via 4 successive wire transfers.
+            <div className="text-[11px] uppercase tracking-wider text-on-surface-variant">
+              Linked via
             </div>
+            <div className="mt-0.5 break-words text-sm font-medium text-[#191c1d]">
+              {connectionFocus.relationship_summary}
+            </div>
+            {connectionFocus.link_count > 1 && (
+              <div className="mt-2 text-[11px] italic text-[#444653]">
+                Across {connectionFocus.link_count} graph link
+                {connectionFocus.link_count === 1 ? "" : "s"}.
+              </div>
+            )}
           </div>
         )}
       </div>

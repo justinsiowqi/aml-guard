@@ -66,6 +66,19 @@ export interface SubgraphEdge {
   kind: string;                  // IS_OFFICER_OF, INTERMEDIARY_OF, REGISTERED_AT, ...
 }
 
+export interface RiskDecompositionBar {
+  label: string;
+  value: number;                 // 0–1
+}
+
+export interface ConnectionFocus {
+  counterparty_label: string;
+  counterparty_type: SubgraphNode["type"];
+  risk_tier: "HIGH" | "MEDIUM" | "LOW";
+  relationship_summary: string;  // e.g. "Intermediary of, Shares address with"
+  link_count: number;
+}
+
 export interface CaseAssessment {
   case_id: string;               // e.g. "STR-2026-0417-001"
   subject: {
@@ -80,6 +93,8 @@ export interface CaseAssessment {
   risk_score: number;            // 0–1
   headline: string;              // one-line rationale for the VerdictBanner
   tx_velocity: number[];         // 6–12 ints for the Sparkline
+  risk_decomposition: RiskDecompositionBar[];
+  connection_focus: ConnectionFocus | null;
   findings: Finding[];
   typology_chunks: TypologyChunk[];
   investigation_steps: InvestigationStep[];
