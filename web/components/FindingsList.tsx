@@ -43,7 +43,13 @@ function ChunkCard({ chunk }: { chunk: TypologyChunk }) {
         <div className="mt-0.5 font-semibold text-on-surface">
           {chunk.title}
         </div>
-        <p className="mt-1.5 leading-snug text-on-surface-variant">
+        <p
+          className={`mt-1.5 leading-snug text-on-surface-variant ${
+            expanded
+              ? "max-h-44 overflow-y-auto rounded border border-outline-variant/30 bg-surface-container-low/40 p-2 pr-3"
+              : ""
+          }`}
+        >
           {shown}
         </p>
         {hasMore && (

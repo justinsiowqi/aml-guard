@@ -7,13 +7,14 @@ runs the three Layer 1/2 tools and reshapes their outputs into that contract.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.graph.connection import Neo4jConnection
-from src.graph.queries import get_full_paragraph_text
+from src.graph.queries import get_entity_subgraph_2hop, get_full_paragraph_text
 from src.mcp.schema import ANOMALY_REGISTRY
 from src.mcp.tools_impl import (
     detect_graph_anomalies,
@@ -38,6 +39,9 @@ _SEVERITY_SCORE = {"HIGH": 9, "MEDIUM": 6, "LOW": 3, "INFO": 1}
 _FRONTEND_NODE_TYPES = {"Person", "Company", "Intermediary", "Address", "Jurisdiction"}
 
 _SENTENCE_TERMINATOR = re.compile(r"[.!?]\s")
+# Clause-level split: include `;` because regulatory text uses semicolons to
+# separate enumerated sub-clauses that read as independent units.
+_CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s+")
 _SNIPPET_MAX_CHARS = 350
 
 # Matches chunks that are only a bracketed metadata header (e.g. document
@@ -64,55 +68,55 @@ def _cap_to_sentence(text: str, max_chars: int = _SNIPPET_MAX_CHARS) -> str:
     return text[:max_chars].rstrip() + "…"
 
 
-def _trim_to_sentence_window(
-    full_paragraph: str,
-    matched_text: str,
-    max_chars: int = _SNIPPET_MAX_CHARS,
-) -> str:
+def _top_matching_sentences(
+    paragraph: str,
+    query: str,
+    top_n: int = 2,
+) -> list[str]:
     """
-    Anchor matched_text within full_paragraph, start at the sentence
-    boundary before it, and return a snippet of at most ~max_chars that
-    ends at the last sentence terminator within range. Falls back to a
-    capped version of matched_text if the anchor can't be located.
+    Split paragraph into sentence/clause-level units and return up to top_n
+    that best match the query. Uses 4-char stem substring matching so
+    "structured" and "structuring" both hit on stem "stru". Sentences are
+    returned in their original paragraph order to preserve flow. Falls back
+    to the first top_n clauses if no query terms overlap.
     """
-    matched_clean = (matched_text or "").strip()
-    if not matched_clean or not full_paragraph:
-        return _cap_to_sentence(matched_clean or full_paragraph, max_chars)
+    sentences = [s.strip() for s in _CLAUSE_SPLIT.split(paragraph) if s.strip()]
+    if not sentences:
+        return []
 
-    needle = matched_clean[:40]
-    pos = full_paragraph.find(needle)
-    if pos < 0:
-        return _cap_to_sentence(matched_clean, max_chars)
+    query_stems = {w.lower()[:4] for w in re.findall(r"[a-zA-Z]{4,}", query)}
+    if not query_stems:
+        return sentences[:top_n]
 
-    # Backward: start of the sentence containing pos
-    start = 0
-    for m in _SENTENCE_TERMINATOR.finditer(full_paragraph[:pos]):
-        start = m.end()
+    scored: list[tuple[int, int, str]] = []
+    for i, s in enumerate(sentences):
+        s_lower = s.lower()
+        hits = sum(1 for stem in query_stems if stem in s_lower)
+        scored.append((hits, i, s))
 
-    # Forward: cap at start + max_chars, rounding back to last sentence terminator
-    soft_end = min(start + max_chars, len(full_paragraph))
-    last_term = None
-    for m in _SENTENCE_TERMINATOR.finditer(full_paragraph, start, soft_end + 1):
-        last_term = m.end()
-    end = last_term if last_term is not None else soft_end
+    if all(h == 0 for h, _, _ in scored):
+        return sentences[:top_n]
 
-    snippet = full_paragraph[start:end].strip()
-    if last_term is None and end < len(full_paragraph):
-        snippet = snippet + "…"
-    return snippet
+    top = sorted(scored, key=lambda x: -x[0])[:top_n]
+    top.sort(key=lambda x: x[1])
+    return [s for _, _, s in top]
 
 
 def expand_chunks_to_paragraphs(
     raw_chunks: list[dict[str, Any]],
     conn: Neo4jConnection,
+    query: str,
     *,
     dedupe: bool = True,
 ) -> list[dict[str, Any]]:
     """
-    For each matched chunk, fetch the full paragraph it belongs to and
-    return a sentence-bounded snippet around the match. Fixes the
-    embedding-fragment problem (mid-word starts) without dragging in the
-    entire paragraph.
+    For each matched chunk, fetch the full paragraph and extract the
+    sentences that best match `query`. Returns:
+      - text:      those sentences capped at SNIPPET_MAX_CHARS
+      - text_full: those same sentences untruncated
+
+    "Show more" in the UI swaps text → text_full so the user sees the
+    matched sentences in full, never the entire paragraph.
 
     When dedupe=True, collapses multiple matched chunks of the same
     paragraph to one entry, keeping the highest-scoring chunk_id.
@@ -151,12 +155,18 @@ def expand_chunks_to_paragraphs(
                 section_id, paragraph, e,
             )
             full = ""
-        snippet = _trim_to_sentence_window(full, original_text) if full else original_text
+
+        if full:
+            top_sents = _top_matching_sentences(full, query, top_n=2)
+            text_full = " ".join(top_sents).strip() or original_text
+        else:
+            text_full = original_text
+
+        snippet = _cap_to_sentence(text_full, _SNIPPET_MAX_CHARS)
         if _is_junk_chunk(snippet):
             continue
-        # Keep the full paragraph alongside so the UI can offer a "Show more"
-        # expansion when the snippet was truncated.
-        expanded.append({**c, "text": snippet, "text_full": full or snippet})
+
+        expanded.append({**c, "text": snippet, "text_full": text_full})
     return expanded
 
 
@@ -335,7 +345,9 @@ def _attach_evidence(
             continue
 
         finding_chunk_ids: list[str] = []
-        expanded = expand_chunks_to_paragraphs(payload.get("chunks") or [], conn, dedupe=True)
+        expanded = expand_chunks_to_paragraphs(
+            payload.get("chunks") or [], conn, query_text, dedupe=True,
+        )
         for c in expanded:
             shaped = shape_chunk(c)
             if shaped is None:

@@ -153,7 +153,7 @@ def chunks(req: ChunksRequest) -> dict:
             conn=conn,
         )
         expanded = expand_chunks_to_paragraphs(
-            payload.get("chunks") or [], conn, dedupe=True,
+            payload.get("chunks") or [], conn, req.query_text, dedupe=True,
         )[: req.top_k]
     finally:
         conn.close()

@@ -89,6 +89,7 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   const inSearchMode = searchResults !== null;
   const displayed = inSearchMode ? searchResults : chunks;
@@ -98,6 +99,9 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
     [displayed],
   );
   const active = sorted[idx];
+  const hasMore =
+    !!active?.text_full && active.text_full.length > active.text.length;
+  const shownText = expanded && active?.text_full ? active.text_full : active?.text;
 
   async function runSearch(q: string) {
     const trimmed = q.trim();
@@ -110,6 +114,7 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
       setSearchResults(results);
       setActiveQuery(trimmed);
       setIdx(0);
+      setExpanded(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed");
     } finally {
@@ -122,11 +127,18 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
     setActiveQuery("");
     setQuery("");
     setIdx(0);
+    setExpanded(false);
     setError(null);
   }
 
-  const prev = () => setIdx((i) => Math.max(0, i - 1));
-  const next = () => setIdx((i) => Math.min(sorted.length - 1, i + 1));
+  const prev = () => {
+    setIdx((i) => Math.max(0, i - 1));
+    setExpanded(false);
+  };
+  const next = () => {
+    setIdx((i) => Math.min(sorted.length - 1, i + 1));
+    setExpanded(false);
+  };
 
   return (
     <div className="flex h-full flex-col rounded border border-outline-variant/30 bg-[#e4e5e6] p-5">
@@ -234,11 +246,24 @@ export default function TypologyEvidence({ chunks }: { chunks: TypologyChunk[] }
 
           <div className="relative flex-1 overflow-hidden rounded border border-outline-variant/20 bg-white shadow-sm">
             <div className="h-1 w-full bg-tertiary-container" />
-            <div className="relative p-5">
+            <div
+              className={`relative p-5 ${
+                expanded ? "max-h-72 overflow-y-auto" : ""
+              }`}
+            >
               <div className="absolute left-0 top-0 h-full w-1 bg-tertiary-container" />
               <p className="font-serif text-sm italic leading-relaxed text-on-surface">
-                {highlight(active.text)}
+                {highlight(shownText ?? "")}
               </p>
+              {hasMore && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  className="mt-3 text-[11px] font-medium text-[#1e40af] transition-opacity hover:opacity-70"
+                >
+                  {expanded ? "Show less" : "Show full paragraph"}
+                </button>
+              )}
             </div>
             <div className="h-px w-full bg-outline-variant/30" />
             <div className="flex items-center justify-between px-5 py-2 font-mono text-[10px] text-on-surface-variant">

@@ -53,6 +53,39 @@ def get_entity_subgraph(conn: "Neo4jConnection", entity_id: str) -> list[dict]:
     """, {"entity_id": entity_id})
 
 
+def get_entity_subgraph_2hop(
+    conn: "Neo4jConnection", entity_id: str, max_paths: int = 100
+) -> list[dict]:
+    """
+    Return 2-hop edges around a Layer 1 entity, preserving intermediate node
+    identities so the caller can reconstruct a multi-tier subgraph.
+
+    Each row represents one step (n1)-[r2]-(n2) where n1 is a direct neighbour
+    of the seed entity. The 1-hop tier is fetched separately by
+    get_entity_subgraph; this query supplies only the 2-hop extensions.
+
+    Cypher's relationship-isomorphism rule prevents r1 and r2 from binding to
+    the same edge, so we don't need an explicit r1<>r2 filter.
+    """
+    return conn.run_query("""
+        MATCH (e)
+        WHERE (e.node_id = $entity_id OR e.name = $entity_id OR e.jurisdiction_id = $entity_id)
+          AND any(lbl IN labels(e) WHERE lbl IN ['Person','Company','Intermediary','Address','Jurisdiction'])
+        WITH e LIMIT 1
+        MATCH (e)-[r1]-(n1)-[r2]-(n2)
+        WHERE n2 <> e
+          AND any(lbl IN labels(n1) WHERE lbl IN ['Person','Company','Intermediary','Address','Jurisdiction'])
+          AND any(lbl IN labels(n2) WHERE lbl IN ['Person','Company','Intermediary','Address','Jurisdiction'])
+        RETURN
+            coalesce(n1.node_id, n1.jurisdiction_id) AS hop1_id,
+            coalesce(n2.node_id, n2.jurisdiction_id) AS hop2_id,
+            coalesce(n2.name, n2.jurisdiction_id)    AS hop2_name,
+            labels(n2)[0]                            AS hop2_type,
+            type(r2)                                 AS hop2_rel
+        LIMIT $max_paths
+    """, {"entity_id": entity_id, "max_paths": max_paths})
+
+
 def get_intermediary_network(
     conn: "Neo4jConnection", intermediary_id: str
 ) -> list[dict]:
