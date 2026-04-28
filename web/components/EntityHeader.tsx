@@ -43,7 +43,7 @@ export default function EntityHeader({
           {sarFiled ? (
             <div className="flex items-center gap-2 rounded border border-primary/40 bg-primary-container px-4 py-2 text-sm font-semibold text-on-primary-container shadow-sm">
               <CheckCircle2 size={16} strokeWidth={2} />
-              <span>SAR filed · MAS-STR-2026-0417</span>
+              <span>SAR filed · {caseId ?? "STR-PENDING"}</span>
             </div>
           ) : handedOff ? (
             <div className="flex items-center gap-2 rounded border border-primary/30 bg-primary-fixed/30 px-4 py-2 text-sm font-semibold text-on-surface shadow-sm">

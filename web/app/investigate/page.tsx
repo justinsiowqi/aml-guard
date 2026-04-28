@@ -118,6 +118,7 @@ export default function InvestigatePage() {
             {assessment ? (
               <EntityHeader
                 subject={assessment.subject}
+                caseId={assessment.case_id}
                 phase={phase}
                 handedOff={handedOff}
                 sarFiled={sarFiled}
@@ -141,6 +142,7 @@ export default function InvestigatePage() {
                     riskScore={assessment.risk_score}
                     headline={assessment.headline}
                     txVelocity={assessment.tx_velocity}
+                    caseId={assessment.case_id}
                     handedOff={handedOff}
                     onHandoff={() => setHandedOff(true)}
                     onSarFiled={() => setSarFiled(true)}

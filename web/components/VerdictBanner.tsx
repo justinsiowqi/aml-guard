@@ -153,7 +153,7 @@ const PIPELINE_STAGES: StageDef[] = [
     label: "MAS Submission",
     Icon: Send,
     messages: ["Transmitting to MAS portal…"],
-    result: "Submitted · MAS-STR-2026-0417",
+    result: "Submitted · {caseId}",
   },
 ];
 
@@ -166,6 +166,7 @@ export default function VerdictBanner({
   riskScore,
   headline,
   txVelocity,
+  caseId,
   handedOff,
   onHandoff,
   onSarFiled,
@@ -174,6 +175,7 @@ export default function VerdictBanner({
   riskScore: number;
   headline: string;
   txVelocity: number[];
+  caseId?: string;
   handedOff: boolean;
   onHandoff: () => void;
   onSarFiled: () => void;
@@ -264,9 +266,10 @@ export default function VerdictBanner({
         }, t + mIdx * PIPELINE_MSG_MS);
       });
       t += stage.messages.length * PIPELINE_MSG_MS;
+      const resolvedResult = stage.result.replace("{caseId}", caseId ?? "STR-PENDING");
       setTimeout(() => {
         setStageStates((s) => ({ ...s, [stage.id]: "done" }));
-        setStageMessage((m) => ({ ...m, [stage.id]: stage.result }));
+        setStageMessage((m) => ({ ...m, [stage.id]: resolvedResult }));
       }, t);
       t += PIPELINE_STAGE_BUFFER_MS;
     });
