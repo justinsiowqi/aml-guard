@@ -37,8 +37,8 @@ function computeRadialLayout(
   const twoHop = others.filter((n) => !oneHopIds.has(n.id));
 
   const minDim = Math.min(width, height);
-  const innerRadius = minDim * 0.26;
-  const outerRadius = minDim * 0.45;
+  const innerRadius = minDim * 0.32;
+  const outerRadius = minDim * 0.48;
 
   if (oneHop.length > 0) {
     const step = (2 * Math.PI) / oneHop.length;
@@ -68,11 +68,11 @@ function computeRadialLayout(
   return positions;
 }
 
-const RECT_W = 150;
-const RECT_H = 44;
-const CIRCLE_R = 28;
-const DIAMOND_RX = 36;
-const DIAMOND_RY = 30;
+const RECT_W = 130;
+const RECT_H = 40;
+const CIRCLE_R = 26;
+const DIAMOND_RX = 32;
+const DIAMOND_RY = 28;
 
 const TYPE_SHAPE: Record<SubgraphNode["type"], NodeShape> = {
   Person: "circle",
@@ -234,8 +234,8 @@ export default function EntitySubgraph({
   subgraph: CaseAssessment["subgraph"];
   connectionFocus: ConnectionFocus | null;
 }) {
-  const W = 700;
-  const H = 370;
+  const W = 900;
+  const H = 440;
 
   const POS = computeRadialLayout(subgraph.nodes, subgraph.edges, W, H);
 
@@ -280,7 +280,7 @@ export default function EntitySubgraph({
           <svg
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="xMidYMid meet"
-            className="h-96 w-full"
+            className="h-[28rem] w-full"
           >
             <defs>
               <marker
@@ -416,9 +416,10 @@ export default function EntitySubgraph({
 
         {connectionFocus && (
           <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
-            <div className="mb-2 border-b border-surface-container-high pb-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+            <div className="mb-3 border-b border-surface-container-high pb-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
               Connection Focus
             </div>
+
             <div className="mb-2 flex flex-wrap items-center gap-1.5">
               <span
                 className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${FOCUS_RISK_PILL[connectionFocus.risk_tier]}`}
@@ -429,21 +430,23 @@ export default function EntitySubgraph({
                 {connectionFocus.counterparty_type}
               </span>
             </div>
-            <div className="mb-3 break-words text-sm font-semibold leading-tight text-[#191c1d]">
+            <div className="mb-4 break-words text-base font-bold leading-snug text-[#191c1d]">
               {connectionFocus.counterparty_label}
             </div>
-            <div className="text-[11px] uppercase tracking-wider text-on-surface-variant">
-              Linked via
-            </div>
-            <div className="mt-0.5 break-words text-sm font-medium text-[#191c1d]">
-              {connectionFocus.relationship_summary}
-            </div>
-            {connectionFocus.link_count > 1 && (
-              <div className="mt-2 text-[11px] italic text-[#444653]">
-                Across {connectionFocus.link_count} graph link
-                {connectionFocus.link_count === 1 ? "" : "s"}.
+
+            <div className="border-t border-surface-container-high pt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                Linked via
               </div>
-            )}
+              <div className="mt-1 break-words text-sm font-medium text-[#191c1d]">
+                {connectionFocus.relationship_summary}
+              </div>
+              <div className="mt-1.5 text-[11px] text-[#444653]">
+                {connectionFocus.link_count === 1
+                  ? "1 graph link"
+                  : `${connectionFocus.link_count} graph links`}
+              </div>
+            </div>
           </div>
         )}
       </div>

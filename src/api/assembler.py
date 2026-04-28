@@ -241,6 +241,18 @@ def _humanize_kind(kind: str) -> str:
     return _KIND_LABELS.get(kind, kind.replace("_", " ").lower().capitalize())
 
 
+def _smart_address_label(raw: str | None) -> str | None:
+    """
+    ICIJ Address.address fields concatenate the registrant name + full postal
+    address, joined by ';'. Truncated they collide with the Intermediary
+    node's label. Use the last segment (country/region) — short and locative.
+    """
+    if not raw:
+        return raw
+    parts = [p.strip() for p in raw.split(";") if p.strip()]
+    return parts[-1] if len(parts) >= 2 else raw
+
+
 def _build_risk_decomposition(
     findings: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -419,10 +431,14 @@ def _build_subgraph(
         nid = str(nid)
         one_hop_ids.add(nid)
         if nid not in nodes:
+            ntype = _normalise_type(n.get("neighbour_type"))
+            label = n.get("neighbour_name") or nid
+            if ntype == "Address":
+                label = _smart_address_label(label) or label
             nodes[nid] = {
                 "id": nid,
-                "label": n.get("neighbour_name") or nid,
-                "type": _normalise_type(n.get("neighbour_type")),
+                "label": label,
+                "type": ntype,
             }
         edges.append({
             "source": seed_id,
@@ -445,10 +461,14 @@ def _build_subgraph(
         if h2 not in nodes:
             if two_hop_added >= max_2hop_nodes:
                 continue
+            h2_type = _normalise_type(r.get("hop2_type"))
+            h2_label = r.get("hop2_name") or h2
+            if h2_type == "Address":
+                h2_label = _smart_address_label(h2_label) or h2_label
             nodes[h2] = {
                 "id": h2,
-                "label": r.get("hop2_name") or h2,
-                "type": _normalise_type(r.get("hop2_type")),
+                "label": h2_label,
+                "type": h2_type,
             }
             two_hop_added += 1
         edges.append({

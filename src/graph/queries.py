@@ -45,7 +45,7 @@ def get_entity_subgraph(conn: "Neo4jConnection", entity_id: str) -> list[dict]:
             collect(DISTINCT {
                 neighbour_id:   coalesce(neighbour.node_id, neighbour.jurisdiction_id),
                 neighbour_type: labels(neighbour)[0],
-                neighbour_name: neighbour.name,
+                neighbour_name: coalesce(neighbour.name, neighbour.address),
                 rel_type:       type(r),
                 rel_props:      properties(r)
             })                                 AS neighbours
@@ -79,7 +79,7 @@ def get_entity_subgraph_2hop(
         RETURN
             coalesce(n1.node_id, n1.jurisdiction_id) AS hop1_id,
             coalesce(n2.node_id, n2.jurisdiction_id) AS hop2_id,
-            coalesce(n2.name, n2.jurisdiction_id)    AS hop2_name,
+            coalesce(n2.name, n2.address, n2.jurisdiction_id) AS hop2_name,
             labels(n2)[0]                            AS hop2_type,
             type(r2)                                 AS hop2_rel
         LIMIT $max_paths

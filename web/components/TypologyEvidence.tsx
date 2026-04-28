@@ -23,6 +23,13 @@ const HIGHLIGHT_KEYWORDS = [
   "politically exposed",
   "wire transfer",
   "correspondent",
+  "money laundering",
+  "natural person",
+  "ultimately own",
+  "ultimately control",
+  "shell",
+  "nominee",
+  "suspicious transaction",
 ];
 
 // Pills carry a short label for the UI and a longer, regulation-flavoured
