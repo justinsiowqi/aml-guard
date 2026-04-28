@@ -1,4 +1,7 @@
-import { Share2 } from "lucide-react";
+"use client";
+
+import { useMemo, useState } from "react";
+import { Share2, X } from "lucide-react";
 import type { CaseAssessment, ConnectionFocus, SubgraphNode } from "@/lib/types";
 
 type Pos = { x: number; y: number };
@@ -198,6 +201,46 @@ function renderNodeShape(shape: NodeShape, palette: typeof RISK_COLOR[keyof type
   );
 }
 
+function SelectionRing({ shape }: { shape: NodeShape }) {
+  const stroke = "#1e40af";
+  const strokeWidth = 2;
+  if (shape === "circle") {
+    return (
+      <circle
+        r={CIRCLE_R + 5}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+      />
+    );
+  }
+  if (shape === "diamond") {
+    const rx = DIAMOND_RX + 5;
+    const ry = DIAMOND_RY + 5;
+    return (
+      <polygon
+        points={`0,${-ry} ${rx},0 0,${ry} ${-rx},0`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+      />
+    );
+  }
+  const rx = shape === "pill" ? RECT_H / 2 + 5 : 5;
+  return (
+    <rect
+      x={-RECT_W / 2 - 4}
+      y={-RECT_H / 2 - 4}
+      width={RECT_W + 8}
+      height={RECT_H + 8}
+      rx={rx}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+    />
+  );
+}
+
 function ShapeSwatch({ shape }: { shape: NodeShape }) {
   const fill = "#eceff1";
   const stroke = "#5a5c66";
@@ -261,6 +304,47 @@ export default function EntitySubgraph({
   const presentShapes = Array.from(new Set(subgraph.nodes.map((n) => TYPE_SHAPE[n.type])));
   const shapeLegend = SHAPE_LEGEND.filter((s) => presentShapes.includes(s.shape));
 
+  // Hover gives a transient highlight; click pins a selection that drives the
+  // details panel on the right. Hover takes visual precedence so the user can
+  // preview connections without losing their pinned selection.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const activeId = hoveredId ?? selectedId;
+
+  const activeRelated = useMemo<Set<string> | null>(() => {
+    if (!activeId) return null;
+    const set = new Set<string>([activeId]);
+    for (const e of subgraph.edges) {
+      if (e.source === activeId) set.add(e.target);
+      else if (e.target === activeId) set.add(e.source);
+    }
+    return set;
+  }, [activeId, subgraph.edges]);
+
+  const isNodeDimmed = (id: string): boolean =>
+    activeRelated !== null && !activeRelated.has(id);
+  const isEdgeDimmed = (src: string, tgt: string): boolean =>
+    activeRelated !== null && !(activeRelated.has(src) && activeRelated.has(tgt));
+
+  const selectedNode = selectedId
+    ? subgraph.nodes.find((n) => n.id === selectedId) ?? null
+    : null;
+  const selectedConnections = selectedNode
+    ? subgraph.edges
+        .filter((e) => e.source === selectedNode.id || e.target === selectedNode.id)
+        .map((e) => {
+          const otherId = e.source === selectedNode.id ? e.target : e.source;
+          const other = subgraph.nodes.find((n) => n.id === otherId);
+          if (!other) return null;
+          const direction: "out" | "in" = e.source === selectedNode.id ? "out" : "in";
+          return { other, kind: e.kind, direction };
+        })
+        .filter(
+          (x): x is { other: SubgraphNode; kind: string; direction: "out" | "in" } =>
+            x !== null,
+        )
+    : [];
+
   return (
     <div className="relative w-full rounded border border-surface-container bg-surface-container-lowest p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -299,6 +383,7 @@ export default function EntitySubgraph({
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="xMidYMid meet"
             className="h-[30rem] w-full"
+            onClick={() => setSelectedId(null)}
           >
             <defs>
               <marker
@@ -323,6 +408,7 @@ export default function EntitySubgraph({
               const style = EDGE_STYLE[e.kind] ?? EDGE_DEFAULT;
               const start = nodeEdgePoint(a, b, TYPE_SHAPE[srcNode.type]);
               const end = nodeEdgePoint(b, a, TYPE_SHAPE[tgtNode.type]);
+              const dimmed = isEdgeDimmed(e.source, e.target);
               return (
                 <line
                   key={i}
@@ -334,7 +420,8 @@ export default function EntitySubgraph({
                   strokeWidth={1.4}
                   strokeDasharray={style.dash}
                   markerEnd="url(#arrow)"
-                  opacity={0.9}
+                  opacity={dimmed ? 0.12 : 0.9}
+                  style={{ transition: "opacity 150ms" }}
                 />
               );
             })}
@@ -345,8 +432,22 @@ export default function EntitySubgraph({
               const palette = RISK_COLOR[n.risk_tier ?? "NONE"];
               const shape = TYPE_SHAPE[n.type];
               const rectLike = isRectLike(shape);
+              const dimmed = isNodeDimmed(n.id);
+              const isSelected = n.id === selectedId;
               return (
-                <g key={n.id} transform={`translate(${p.x}, ${p.y})`}>
+                <g
+                  key={n.id}
+                  transform={`translate(${p.x}, ${p.y})`}
+                  opacity={dimmed ? 0.25 : 1}
+                  style={{ cursor: "pointer", transition: "opacity 150ms" }}
+                  onMouseEnter={() => setHoveredId(n.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setSelectedId((prev) => (prev === n.id ? null : n.id));
+                  }}
+                >
+                  {isSelected && <SelectionRing shape={shape} />}
                   {renderNodeShape(shape, palette)}
                   {rectLike ? (
                     <>
@@ -459,7 +560,109 @@ export default function EntitySubgraph({
           </div>
         </div>
 
-        {connectionFocus && (
+        {selectedNode ? (
+          <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
+            <div className="mb-3 flex items-center justify-between border-b border-surface-container-high pb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                Node Details
+              </span>
+              <button
+                type="button"
+                aria-label="Close details"
+                onClick={() => setSelectedId(null)}
+                className="rounded p-0.5 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${FOCUS_RISK_PILL[selectedNode.risk_tier ?? "MEDIUM"]}`}
+              >
+                {selectedNode.risk_tier ?? "—"}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+                {selectedNode.type}
+              </span>
+            </div>
+            <div className="mb-3 break-words text-base font-bold leading-snug text-[#191c1d]">
+              {selectedNode.label}
+            </div>
+
+            {selectedNode.metadata && (selectedNode.metadata.jurisdiction || selectedNode.metadata.address) && (
+              <div className="mb-3 space-y-1 border-t border-surface-container-high pt-3 text-[11px] text-[#444653]">
+                {selectedNode.metadata.jurisdiction && (
+                  <div>
+                    <span className="font-semibold uppercase tracking-wider text-on-surface-variant/80">
+                      Jurisdiction ·{" "}
+                    </span>
+                    <span className="text-[#191c1d]">{selectedNode.metadata.jurisdiction}</span>
+                  </div>
+                )}
+                {selectedNode.metadata.address && (
+                  <div>
+                    <span className="font-semibold uppercase tracking-wider text-on-surface-variant/80">
+                      Registered ·{" "}
+                    </span>
+                    <span className="text-[#191c1d]">{selectedNode.metadata.address}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="border-t border-surface-container-high pt-3">
+              <div className="mb-2 flex items-baseline justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                  Direct connections
+                </span>
+                <span className="font-mono text-[10px] text-on-surface-variant/80">
+                  {selectedConnections.length}
+                </span>
+              </div>
+              {selectedConnections.length === 0 ? (
+                <div className="text-[11px] italic text-on-surface-variant/70">
+                  No direct connections in current view.
+                </div>
+              ) : (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {selectedConnections.map((c, i) => {
+                    const style = EDGE_STYLE[c.kind] ?? EDGE_DEFAULT;
+                    return (
+                      <li
+                        key={`${c.other.id}-${c.kind}-${i}`}
+                        className="rounded border border-outline-variant/20 bg-surface-container-low/40 px-2 py-1.5"
+                      >
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="font-mono text-[10px] text-on-surface-variant/80">
+                            {c.direction === "out" ? "→" : "←"}
+                          </span>
+                          <span className="min-w-0 flex-1 break-words text-[12px] font-medium text-[#191c1d]">
+                            {c.other.label}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[9px] uppercase tracking-wider text-on-surface-variant/70">
+                            {c.other.type}
+                          </span>
+                          <span
+                            className="rounded-sm px-1 py-0.5 text-[9px] font-medium"
+                            style={{
+                              backgroundColor: `${style.stroke}1a`,
+                              color: style.stroke,
+                            }}
+                          >
+                            {style.label}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : connectionFocus ? (
           <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
             <div className="mb-3 border-b border-surface-container-high pb-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
               Connection Focus
@@ -491,9 +694,12 @@ export default function EntitySubgraph({
                   ? "1 graph link"
                   : `${connectionFocus.link_count} graph links`}
               </div>
+              <div className="mt-3 text-[10px] italic text-on-surface-variant/70">
+                Click any node to inspect.
+              </div>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
