@@ -58,6 +58,10 @@ export interface SubgraphNode {
   type: "Person" | "Company" | "Intermediary" | "Address" | "Jurisdiction";
   risk_tier?: "HIGH" | "MEDIUM" | "LOW";
   note?: string;                 // e.g. "BVI", "Mossack Fonseca", "Geneva"
+  metadata?: {                   // present on the seed; renders as badges
+    jurisdiction?: string;
+    address?: string;
+  };
 }
 
 export interface SubgraphEdge {

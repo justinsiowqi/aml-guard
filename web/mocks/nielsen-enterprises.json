@@ -107,12 +107,10 @@
   "subgraph": {
     "nodes": [
       { "id": "p_jonathan_lim", "label": "Jonathan Lim Wei Ming", "type": "Person", "risk_tier": "HIGH", "note": "STR subject · Singapore" },
-      { "id": "c_nielsen", "label": "Nielsen Enterprises Ltd", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
+      { "id": "c_nielsen", "label": "Nielsen Enterprises Ltd", "type": "Company", "risk_tier": "HIGH", "metadata": { "jurisdiction": "British Virgin Islands", "address": "Jersey, United Kingdom" } },
       { "id": "c_nescoll", "label": "Nescoll Limited", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
       { "id": "c_hangon", "label": "Hangon Property Holdings", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
-      { "id": "i_mossack", "label": "Mossack Fonseca", "type": "Intermediary", "risk_tier": "HIGH", "note": "Panama · historic" },
-      { "id": "j_bvi", "label": "British Virgin Islands", "type": "Jurisdiction", "risk_tier": "HIGH", "note": "AML risk: high" },
-      { "id": "a_bsi_geneva", "label": "BSI Bank, Geneva", "type": "Address", "risk_tier": "MEDIUM", "note": "ordering bank" }
+      { "id": "i_mossack", "label": "Mossack Fonseca", "type": "Intermediary", "risk_tier": "HIGH", "note": "Panama · historic" }
     ],
     "edges": [
       { "source": "p_jonathan_lim", "target": "c_nielsen", "kind": "RECEIVED_WIRE_FROM" },
@@ -120,11 +118,7 @@
       { "source": "p_jonathan_lim", "target": "c_hangon", "kind": "RECEIVED_WIRE_FROM" },
       { "source": "i_mossack", "target": "c_nielsen", "kind": "INTERMEDIARY_OF" },
       { "source": "i_mossack", "target": "c_nescoll", "kind": "INTERMEDIARY_OF" },
-      { "source": "i_mossack", "target": "c_hangon", "kind": "INTERMEDIARY_OF" },
-      { "source": "c_nielsen", "target": "j_bvi", "kind": "INCORPORATED_IN" },
-      { "source": "c_nescoll", "target": "j_bvi", "kind": "INCORPORATED_IN" },
-      { "source": "c_hangon", "target": "j_bvi", "kind": "INCORPORATED_IN" },
-      { "source": "c_nielsen", "target": "a_bsi_geneva", "kind": "ROUTED_THROUGH" }
+      { "source": "i_mossack", "target": "c_hangon", "kind": "INTERMEDIARY_OF" }
     ]
   },
   "created_at": "2026-04-17T09:12:12Z"

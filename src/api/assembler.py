@@ -412,29 +412,54 @@ def _build_subgraph(
 ) -> tuple[list[dict], list[dict]]:
     seed_id = str(seed.get("entity_id") or "")
     seed_type = _normalise_type(seed.get("entity_type"))
+
+    # Address + Jurisdiction are *attributes* of the seed (where it's
+    # registered, where it's incorporated) rather than peer nodes in a
+    # relationship graph. Collapse them into seed.metadata so the
+    # hierarchical layout doesn't waste graph slots on them.
+    seed_metadata: dict[str, str] = {}
+    if seed.get("jurisdiction"):
+        seed_metadata["jurisdiction"] = str(seed["jurisdiction"])
+
     nodes: dict[str, dict[str, Any]] = {
         seed_id: {
             "id": seed_id,
             "label": seed.get("entity_name") or seed_id,
             "type": seed_type,
             "risk_tier": "HIGH",
+            "metadata": seed_metadata,
         }
     }
     edges: list[dict[str, Any]] = []
     one_hop_ids: set[str] = set()
+    skipped_neighbour_ids: set[str] = set()
 
-    # 1-hop tier — direct neighbours of the seed.
+    # 1-hop tier — direct neighbours of the seed. Address and Jurisdiction
+    # neighbours fold into seed_metadata and are skipped as graph nodes.
     for n in seed.get("neighbours") or []:
         nid = n.get("neighbour_id")
         if nid is None:
             continue
         nid = str(nid)
+        ntype = _normalise_type(n.get("neighbour_type"))
+        label = n.get("neighbour_name") or nid
+
+        if ntype == "Address":
+            short = _smart_address_label(label) or label
+            seed_metadata["address"] = short
+            skipped_neighbour_ids.add(nid)
+            continue
+        if ntype == "Jurisdiction":
+            # Prefer the human name (e.g. "British Virgin Islands") over a
+            # short code (e.g. "BVI") if the seed only knew the code.
+            existing = seed_metadata.get("jurisdiction") or ""
+            if not existing or len(label) > len(existing):
+                seed_metadata["jurisdiction"] = label
+            skipped_neighbour_ids.add(nid)
+            continue
+
         one_hop_ids.add(nid)
         if nid not in nodes:
-            ntype = _normalise_type(n.get("neighbour_type"))
-            label = n.get("neighbour_name") or nid
-            if ntype == "Address":
-                label = _smart_address_label(label) or label
             nodes[nid] = {
                 "id": nid,
                 "label": label,
@@ -447,8 +472,8 @@ def _build_subgraph(
         })
 
     # 2-hop tier — extensions hanging off each 1-hop neighbour. Cap to keep
-    # the outer ring readable; once we hit the cap, accept further edges
-    # only when they connect to already-included 2-hop nodes.
+    # the bottom row readable. Skip h1 nodes we collapsed into seed
+    # metadata (Address/Jurisdiction) and h2 nodes of those types as well.
     two_hop_added = 0
     for r in two_hop_rows or []:
         h1 = r.get("hop1_id")
@@ -456,15 +481,17 @@ def _build_subgraph(
         if h1 is None or h2 is None:
             continue
         h1, h2 = str(h1), str(h2)
+        if h1 in skipped_neighbour_ids:
+            continue
         if h1 not in one_hop_ids or h2 == seed_id or h2 in one_hop_ids:
+            continue
+        h2_type = _normalise_type(r.get("hop2_type"))
+        if h2_type in ("Address", "Jurisdiction"):
             continue
         if h2 not in nodes:
             if two_hop_added >= max_2hop_nodes:
                 continue
-            h2_type = _normalise_type(r.get("hop2_type"))
             h2_label = r.get("hop2_name") or h2
-            if h2_type == "Address":
-                h2_label = _smart_address_label(h2_label) or h2_label
             nodes[h2] = {
                 "id": h2,
                 "label": h2_label,

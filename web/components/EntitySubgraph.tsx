@@ -4,7 +4,48 @@ import type { CaseAssessment, ConnectionFocus, SubgraphNode } from "@/lib/types"
 type Pos = { x: number; y: number };
 type NodeShape = "circle" | "rect" | "rect-dashed" | "pill" | "diamond";
 
-function computeRadialLayout(
+function pickSeed(
+  nodes: SubgraphNode[],
+  edges: { source: string; target: string }[],
+): SubgraphNode {
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  return nodes.slice().sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))[0];
+}
+
+function spreadHoriz(
+  nodes: SubgraphNode[],
+  positions: Record<string, Pos>,
+  width: number,
+  y: number,
+): void {
+  if (nodes.length === 0) return;
+  if (nodes.length === 1) {
+    positions[nodes[0].id] = { x: width / 2, y };
+    return;
+  }
+  const margin = width * 0.08;
+  const available = width - 2 * margin;
+  const step = available / (nodes.length - 1);
+  nodes.forEach((n, i) => {
+    positions[n.id] = { x: margin + i * step, y };
+  });
+}
+
+/**
+ * Three-band hierarchical layout for AML investigation:
+ *   row 0 (top)    — Officers (Persons): who controls the seed
+ *   row 1 (middle) — Seed entity, with metadata badges; intermediary just below
+ *   row 2 (bottom) — 2-hop network: shells controlled by the same officers
+ *                    and/or set up by the same intermediary
+ *
+ * Reads top-down as "who → what → how", which matches the analyst's
+ * mental model better than a radial layout.
+ */
+function computeHierarchicalLayout(
   nodes: SubgraphNode[],
   edges: { source: string; target: string }[],
   width: number,
@@ -13,66 +54,42 @@ function computeRadialLayout(
   const positions: Record<string, Pos> = {};
   if (nodes.length === 0) return positions;
 
-  const degree = new Map<string, number>();
-  for (const e of edges) {
-    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
-    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
-  }
-  const seed =
-    nodes.slice().sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))[0];
+  const seed = pickSeed(nodes, edges);
 
-  const cx = width / 2;
-  const cy = height / 2;
-  positions[seed.id] = { x: cx, y: cy };
-
-  // Partition non-seed nodes into 1-hop (directly connected to seed) and
-  // 2-hop (reachable only through a 1-hop intermediate).
   const oneHopIds = new Set<string>();
   for (const e of edges) {
     if (e.source === seed.id) oneHopIds.add(e.target);
     else if (e.target === seed.id) oneHopIds.add(e.source);
   }
-  const others = nodes.filter((n) => n.id !== seed.id);
-  const oneHop = others.filter((n) => oneHopIds.has(n.id));
-  const twoHop = others.filter((n) => !oneHopIds.has(n.id));
 
-  const minDim = Math.min(width, height);
-  const innerRadius = minDim * 0.32;
-  const outerRadius = minDim * 0.48;
-
-  if (oneHop.length > 0) {
-    const step = (2 * Math.PI) / oneHop.length;
-    const offset = -Math.PI / 2;
-    oneHop.forEach((n, i) => {
-      const angle = offset + i * step;
-      positions[n.id] = {
-        x: cx + innerRadius * Math.cos(angle),
-        y: cy + innerRadius * Math.sin(angle),
-      };
-    });
+  const officersAndPeers: SubgraphNode[] = [];
+  const intermediaries: SubgraphNode[] = [];
+  for (const n of nodes) {
+    if (n.id === seed.id || !oneHopIds.has(n.id)) continue;
+    if (n.type === "Intermediary") intermediaries.push(n);
+    else officersAndPeers.push(n);
   }
+  const twoHop = nodes.filter((n) => n.id !== seed.id && !oneHopIds.has(n.id));
 
-  if (twoHop.length > 0) {
-    const step = (2 * Math.PI) / twoHop.length;
-    // Half-step offset so outer-ring nodes sit between inner-ring ones.
-    const offset = -Math.PI / 2 + step / 2;
-    twoHop.forEach((n, i) => {
-      const angle = offset + i * step;
-      positions[n.id] = {
-        x: cx + outerRadius * Math.cos(angle),
-        y: cy + outerRadius * Math.sin(angle),
-      };
-    });
-  }
+  const cx = width / 2;
+  const rowOfficers      = height * 0.16;
+  const rowSeed          = height * 0.42;
+  const rowIntermediary  = height * 0.62;
+  const rowTwoHop        = height * 0.86;
+
+  positions[seed.id] = { x: cx, y: rowSeed };
+  spreadHoriz(officersAndPeers, positions, width, rowOfficers);
+  spreadHoriz(intermediaries,    positions, width, rowIntermediary);
+  spreadHoriz(twoHop,            positions, width, rowTwoHop);
 
   return positions;
 }
 
-const RECT_W = 130;
-const RECT_H = 40;
-const CIRCLE_R = 26;
-const DIAMOND_RX = 32;
-const DIAMOND_RY = 28;
+const RECT_W = 110;
+const RECT_H = 38;
+const CIRCLE_R = 24;
+const DIAMOND_RX = 30;
+const DIAMOND_RY = 26;
 
 const TYPE_SHAPE: Record<SubgraphNode["type"], NodeShape> = {
   Person: "circle",
@@ -234,10 +251,11 @@ export default function EntitySubgraph({
   subgraph: CaseAssessment["subgraph"];
   connectionFocus: ConnectionFocus | null;
 }) {
-  const W = 900;
-  const H = 440;
+  const W = 1100;
+  const H = 680;
 
-  const POS = computeRadialLayout(subgraph.nodes, subgraph.edges, W, H);
+  const POS = computeHierarchicalLayout(subgraph.nodes, subgraph.edges, W, H);
+  const seed = subgraph.nodes.length > 0 ? pickSeed(subgraph.nodes, subgraph.edges) : null;
 
   const presentKinds = Array.from(new Set(subgraph.edges.map((e) => e.kind)));
   const presentShapes = Array.from(new Set(subgraph.nodes.map((n) => TYPE_SHAPE[n.type])));
@@ -280,7 +298,7 @@ export default function EntitySubgraph({
           <svg
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="xMidYMid meet"
-            className="h-[28rem] w-full"
+            className="h-[30rem] w-full"
           >
             <defs>
               <marker
@@ -373,6 +391,33 @@ export default function EntitySubgraph({
                 </g>
               );
             })}
+
+            {seed?.metadata && POS[seed.id] && (
+              <g transform={`translate(${POS[seed.id].x}, ${POS[seed.id].y})`}>
+                {seed.metadata.jurisdiction && (
+                  <text
+                    y={RECT_H / 2 + 16}
+                    textAnchor="middle"
+                    fontSize={11}
+                    fontWeight={600}
+                    fontStyle="italic"
+                    fill="#5a4300"
+                  >
+                    {truncate(seed.metadata.jurisdiction, 36)}
+                  </text>
+                )}
+                {seed.metadata.address && (
+                  <text
+                    y={RECT_H / 2 + 32}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fill="#6b6f78"
+                  >
+                    {truncate(seed.metadata.address, 40)}
+                  </text>
+                )}
+              </g>
+            )}
           </svg>
 
           <div className="border-t border-outline-variant/20 bg-surface-container-lowest/60 px-4 py-2 text-[10px] text-on-surface-variant">
