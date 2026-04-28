@@ -143,6 +143,8 @@ export default function InvestigatePage() {
                     headline={assessment.headline}
                     txVelocity={assessment.tx_velocity}
                     riskDecomposition={assessment.risk_decomposition}
+                    findings={assessment.findings}
+                    typologyChunks={assessment.typology_chunks}
                     caseId={assessment.case_id}
                     handedOff={handedOff}
                     onHandoff={() => setHandedOff(true)}

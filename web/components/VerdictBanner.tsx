@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { RiskDecompositionBar, Verdict } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import type { Finding, RiskDecompositionBar, TypologyChunk, Verdict } from "@/lib/types";
 import {
   ArrowRight,
   CheckCircle2,
@@ -68,7 +68,7 @@ const VERIFICATION_PROTOCOL: ChecklistItem[] = [
       "Adjudicating near-miss aliases…",
       "Recording screening attestation…",
     ],
-    rationale: "Screened OFAC, UN, EU, MAS — no hits.",
+    rationale: "Screening stub — no sanctions feed wired in this build.",
   },
   {
     id: "funds",
@@ -82,7 +82,7 @@ const VERIFICATION_PROTOCOL: ChecklistItem[] = [
       "Validating source documentation…",
       "Computing source-of-wealth score…",
     ],
-    rationale: "Traced 3 upstream accounts; 2 flagged for docs.",
+    rationale: "Source-of-funds stub — Transaction nodes pending Layer 1 expansion.",
   },
   {
     id: "typology",
@@ -132,14 +132,14 @@ const PIPELINE_STAGES: StageDef[] = [
     label: "Approval Agent",
     Icon: ShieldCheck,
     messages: ["Reviewing case file…", "Cross-checking verification log…"],
-    result: "Signed off · attestations valid",
+    result: "Signed off · {findingsCount} reviewed",
   },
   {
     id: "filing",
     label: "Filing Agent",
     Icon: FileText,
     messages: ["Drafting SAR narrative…", "Citing MAS Notice 626 §3.2…"],
-    result: "Draft ready · 342 words",
+    result: "Draft ready · cites {chunkCount}",
   },
   {
     id: "submission",
@@ -160,6 +160,8 @@ export default function VerdictBanner({
   headline,
   txVelocity,
   riskDecomposition,
+  findings,
+  typologyChunks,
   caseId,
   handedOff,
   onHandoff,
@@ -170,6 +172,8 @@ export default function VerdictBanner({
   headline: string;
   txVelocity: number[];
   riskDecomposition: RiskDecompositionBar[];
+  findings: Finding[];
+  typologyChunks: TypologyChunk[];
   caseId?: string;
   handedOff: boolean;
   onHandoff: () => void;
@@ -178,6 +182,32 @@ export default function VerdictBanner({
   const meta = VERDICT_META[verdict];
   const maxTx = Math.max(...txVelocity, 1);
   const maxDecomp = Math.max(...riskDecomposition.map((d) => d.value), 0.01);
+
+  // For verification items 3 and 4 the outcome string is sourced from real
+  // assessment data; items 1 and 2 fall back to honest static stubs since
+  // no sanctions feed or transaction data exists in this build.
+  const dynamicRationales = useMemo<Record<string, string>>(() => {
+    const top = findings[0];
+    const patternHuman = top ? top.pattern_name.replace(/_/g, " ") : "";
+    const chunksN = typologyChunks.length;
+    const findingsN = findings.length;
+    return {
+      typology: top
+        ? `Matched ${patternHuman} (${top.severity}); ${chunksN} citation${chunksN === 1 ? "" : "s"}.`
+        : `${chunksN} typology citation${chunksN === 1 ? "" : "s"} retrieved.`,
+      narrative: `Narrative compiled from ${findingsN} finding${findingsN === 1 ? "" : "s"}.`,
+    };
+  }, [findings, typologyChunks]);
+
+  const stageTokens = useMemo<Record<string, string>>(() => {
+    const fc = findings.length;
+    const cc = typologyChunks.length;
+    return {
+      "{caseId}":         caseId ?? "STR-PENDING",
+      "{findingsCount}":  fc === 1 ? "1 finding" : `${fc} findings`,
+      "{chunkCount}":     cc === 1 ? "1 regulation" : `${cc} regulations`,
+    };
+  }, [findings.length, typologyChunks.length, caseId]);
 
   const [statuses, setStatuses] = useState<Record<string, ChecklistStatus>>(() =>
     Object.fromEntries(VERIFICATION_PROTOCOL.map((i) => [i.id, "pending"])) as Record<
@@ -261,7 +291,10 @@ export default function VerdictBanner({
         }, t + mIdx * PIPELINE_MSG_MS);
       });
       t += stage.messages.length * PIPELINE_MSG_MS;
-      const resolvedResult = stage.result.replace("{caseId}", caseId ?? "STR-PENDING");
+      const resolvedResult = Object.entries(stageTokens).reduce(
+        (s, [k, v]) => s.replace(k, v),
+        stage.result,
+      );
       setTimeout(() => {
         setStageStates((s) => ({ ...s, [stage.id]: "done" }));
         setStageMessage((m) => ({ ...m, [stage.id]: resolvedResult }));
@@ -407,7 +440,7 @@ export default function VerdictBanner({
                           ? item.hint
                           : status === "verifying"
                           ? thoughtMsg[item.id] ?? "verifying…"
-                          : item.rationale}
+                          : dynamicRationales[item.id] ?? item.rationale}
                       </div>
                     </div>
                   </div>

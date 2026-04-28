@@ -110,18 +110,37 @@ export default function InvestigationStream({
                     {formatTime(step.timestamp)}
                   </div>
                   <div className={`text-sm font-bold ${TITLE_TONE[tone]}`}>{title}</div>
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(i)}
-                    className="mt-1 flex w-full items-start gap-1 text-left text-xs text-on-surface-variant transition-colors hover:text-on-surface"
-                  >
-                    <span className={isExpanded ? "" : "line-clamp-2"}>{step.summary}</span>
-                    <ChevronDown
-                      size={14}
-                      strokeWidth={2}
-                      className={`mt-0.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                    />
-                  </button>
+                  {isStreaming ? (
+                    <div className="mt-1 text-xs text-on-surface-variant">
+                      {step.summary}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(i)}
+                      className="mt-1 flex w-full items-start gap-1 text-left text-xs text-on-surface-variant transition-colors hover:text-on-surface"
+                    >
+                      <span
+                        style={
+                          isExpanded
+                            ? undefined
+                            : {
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                              }
+                        }
+                      >
+                        {step.summary}
+                      </span>
+                      <ChevronDown
+                        size={14}
+                        strokeWidth={2}
+                        className={`mt-0.5 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  )}
                 </motion.li>
               );
             })}
