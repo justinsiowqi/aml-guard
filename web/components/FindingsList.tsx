@@ -28,6 +28,38 @@ function titleCase(name: string): string {
     .join(" ");
 }
 
+function ChunkCard({ chunk }: { chunk: TypologyChunk }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasMore =
+    !!chunk.text_full && chunk.text_full.length > chunk.text.length;
+  const shown = expanded && chunk.text_full ? chunk.text_full : chunk.text;
+
+  return (
+    <li className="flex min-w-[240px] flex-1 basis-64 items-start gap-3 rounded border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-xs">
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
+          {chunk.source} · {chunk.section}
+        </div>
+        <div className="mt-0.5 font-semibold text-on-surface">
+          {chunk.title}
+        </div>
+        <p className="mt-1.5 leading-snug text-on-surface-variant">
+          {shown}
+        </p>
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1.5 text-[11px] font-medium text-[#1e40af] transition-opacity hover:opacity-70"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
 export default function FindingsList({
   findings,
   chunks = [],
@@ -143,22 +175,7 @@ export default function FindingsList({
                         ) : (
                           <ul className="flex flex-wrap gap-2">
                             {linkedChunks.map((c) => (
-                              <li
-                                key={c.id}
-                                className="flex min-w-[240px] flex-1 basis-64 items-start gap-3 rounded border border-outline-variant/30 bg-surface-container-lowest px-3 py-2 text-xs"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="font-mono text-[10px] uppercase tracking-wider text-on-surface-variant">
-                                    {c.source} · {c.section}
-                                  </div>
-                                  <div className="mt-0.5 font-semibold text-on-surface">
-                                    {c.title}
-                                  </div>
-                                  <p className="mt-1.5 leading-snug text-on-surface-variant">
-                                    {c.text}
-                                  </p>
-                                </div>
-                              </li>
+                              <ChunkCard key={c.id} chunk={c} />
                             ))}
                           </ul>
                         )}

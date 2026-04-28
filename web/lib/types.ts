@@ -38,7 +38,8 @@ export interface TypologyChunk {
   source: "FATF" | "MAS Notice 626";
   section: string;               // e.g. "para 6.4"
   title: string;                 // human-readable section title
-  text: string;
+  text: string;                  // sentence-bounded snippet (~350 chars)
+  text_full?: string;            // full paragraph text, for "Show more" expansion
   similarity_score: number;      // 0–1
 }
 

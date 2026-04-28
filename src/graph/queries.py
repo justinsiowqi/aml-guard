@@ -203,3 +203,23 @@ def vector_search_typology_chunks(
     })
 
 
+def get_full_paragraph_text(
+    conn: "Neo4jConnection", section_id: str, paragraph: str
+) -> str:
+    """
+    Concatenate every Chunk belonging to a (section_id, paragraph) pair,
+    in chunk_index order, so the user sees the whole paragraph rather
+    than a single embedding-sized fragment.
+    """
+    rows = conn.run_query(
+        """
+        MATCH (s:Section {section_id: $section_id})-[:HAS_REQUIREMENT]->(req:Requirement)-[:HAS_CHUNK]->(c:Chunk)
+        WHERE c.paragraph = $paragraph
+        RETURN c.text AS text
+        ORDER BY c.chunk_index
+        """,
+        {"section_id": section_id, "paragraph": paragraph},
+    )
+    return " ".join((r.get("text") or "").strip() for r in rows if r.get("text"))
+
+

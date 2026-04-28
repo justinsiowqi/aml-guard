@@ -11,6 +11,7 @@ const STATUS_LABEL: Record<Phase, string> = {
 
 export default function EntityHeader({
   subject,
+  caseId,
   phase = "settled",
   handedOff = false,
   sarFiled = false,

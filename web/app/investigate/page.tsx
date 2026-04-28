@@ -7,7 +7,6 @@ import QuestionBar from "@/components/QuestionBar";
 import TopHeader from "@/components/TopHeader";
 import EntityHeader from "@/components/EntityHeader";
 import InvestigationStream from "@/components/InvestigationStream";
-import InvestigationLoading from "@/components/InvestigationLoading";
 import VerdictBanner from "@/components/VerdictBanner";
 import FindingsList from "@/components/FindingsList";
 import TypologyEvidence from "@/components/TypologyEvidence";
@@ -18,6 +17,21 @@ type Phase = "idle" | "streaming" | "settled";
 const STEP_OFFSET_SECONDS = [0, 2, 5, 7, 8];
 const SETTLE_BUFFER_MS = 500;
 
+const PLACEHOLDER_STEP_TEMPLATE: Omit<InvestigationStep, "timestamp">[] = [
+  {
+    tool: "traverse_entity_network",
+    summary: "Pulling 2-hop entity subgraph from the graph…",
+  },
+  {
+    tool: "detect_graph_anomalies",
+    summary: "Running 6 anomaly patterns against Layer 1…",
+  },
+  {
+    tool: "retrieve_typology_chunks",
+    summary: "Retrieving regulatory citations per fired pattern…",
+  },
+];
+
 function rebaseStepTimestamps(steps: InvestigationStep[], startedAtMs: number): InvestigationStep[] {
   return steps.map((s, i) => {
     const offsetSec =
@@ -27,10 +41,19 @@ function rebaseStepTimestamps(steps: InvestigationStep[], startedAtMs: number): 
   });
 }
 
+function buildPlaceholderSteps(startedAtMs: number): InvestigationStep[] {
+  return PLACEHOLDER_STEP_TEMPLATE.map((s, i) => ({
+    ...s,
+    timestamp: new Date(startedAtMs + STEP_OFFSET_SECONDS[i] * 1000).toISOString(),
+  }));
+}
+
 export default function InvestigatePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [assessment, setAssessment] = useState<CaseAssessment | null>(null);
   const [question, setQuestion] = useState<string>("");
+  const [startedAt, setStartedAt] = useState<number>(0);
+  const [placeholderSteps, setPlaceholderSteps] = useState<InvestigationStep[]>([]);
   const [handedOff, setHandedOff] = useState(false);
   const [sarFiled, setSarFiled] = useState(false);
   const subjectRef = useRef<HTMLDivElement | null>(null);
@@ -42,16 +65,17 @@ export default function InvestigatePage() {
     setHandedOff(false);
     setSarFiled(false);
     const startedAt = Date.now();
+    setStartedAt(startedAt);
+    setPlaceholderSteps(buildPlaceholderSteps(startedAt));
+    setTimeout(() => {
+      subjectRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
     const result = await investigate(q);
     const rebased = {
       ...result,
       investigation_steps: rebaseStepTimestamps(result.investigation_steps, startedAt),
     };
     setAssessment(rebased);
-
-    setTimeout(() => {
-      subjectRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
 
     const lastTsMs = rebased.investigation_steps.length
       ? new Date(rebased.investigation_steps[rebased.investigation_steps.length - 1].timestamp).getTime()
@@ -89,22 +113,29 @@ export default function InvestigatePage() {
           </div>
         )}
 
-        {phase === "streaming" && !assessment && (
-          <InvestigationLoading question={question} />
-        )}
-
-        {phase !== "idle" && assessment && (
+        {phase !== "idle" && (
           <div ref={subjectRef}>
-            <EntityHeader
-              subject={assessment.subject}
-              phase={phase}
-              handedOff={handedOff}
-              sarFiled={sarFiled}
-            />
+            {assessment ? (
+              <EntityHeader
+                subject={assessment.subject}
+                phase={phase}
+                handedOff={handedOff}
+                sarFiled={sarFiled}
+              />
+            ) : (
+              <div className="mb-8">
+                <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">
+                  AML Guard · Investigation in progress
+                </div>
+                <h1 className="text-2xl font-bold leading-tight tracking-tight text-on-surface">
+                  {question}
+                </h1>
+              </div>
+            )}
 
             <div className="mb-6 grid grid-cols-12 gap-6">
               <div className="col-span-12 lg:col-span-8">
-                {phase === "settled" ? (
+                {phase === "settled" && assessment ? (
                   <VerdictBanner
                     verdict={assessment.verdict}
                     riskScore={assessment.risk_score}
@@ -122,13 +153,14 @@ export default function InvestigatePage() {
               </div>
               <div className="col-span-12 lg:col-span-4">
                 <InvestigationStream
-                  steps={assessment.investigation_steps}
+                  key={startedAt}
+                  steps={assessment?.investigation_steps ?? placeholderSteps}
                   isStreaming={phase === "streaming"}
                 />
               </div>
             </div>
 
-            {phase === "settled" && (
+            {phase === "settled" && assessment && (
               <>
                 <div className="mb-6 grid grid-cols-12 items-start gap-6">
                   <div className="col-span-12 lg:col-span-8">

@@ -53,7 +53,6 @@ export default function InvestigationStream({
   };
 
   useEffect(() => {
-    setRevealedCount(0);
     if (!steps.length) return;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const now = Date.now();

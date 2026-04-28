@@ -21,7 +21,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from src.api.assembler import build_case_assessment
+from src.api.assembler import (
+    build_case_assessment,
+    expand_chunks_to_paragraphs,
+    shape_chunk,
+)
 from src.graph.connection import Neo4jConnection
 from src.mcp.tools_impl import (
     detect_graph_anomalies,
@@ -134,10 +138,25 @@ def anomalies(req: AnomaliesRequest) -> dict:
 
 @app.post("/api/chunks")
 def chunks(req: ChunksRequest) -> dict:
+    """Free-form vector search over the regulatory corpus.
+
+    Returns chunks pre-shaped to match the frontend TypologyChunk type
+    (web/lib/types.ts), so the Citation Viewer can render them directly.
+    """
     conn = _connect()
     try:
-        return retrieve_typology_chunks(
-            req.query_text, typology_id=req.typology_id, top_k=req.top_k, conn=conn
+        # Pull a few extra so post-dedup we still have ~top_k results.
+        payload = retrieve_typology_chunks(
+            req.query_text,
+            typology_id=req.typology_id or "MAS-626",
+            top_k=req.top_k * 2,
+            conn=conn,
         )
+        expanded = expand_chunks_to_paragraphs(
+            payload.get("chunks") or [], conn, dedupe=True,
+        )[: req.top_k]
     finally:
         conn.close()
+
+    shaped = [s for c in expanded if (s := shape_chunk(c))]
+    return {"query": req.query_text, "chunks": shaped}
