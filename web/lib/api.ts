@@ -1,5 +1,5 @@
 import type { CaseAssessment, TypologyChunk } from "./types";
-import { mockInvestigate } from "./mock-adapter";
+import { mockInvestigate, mockInvestigateDeep } from "./mock-adapter";
 
 export async function investigate(question: string): Promise<CaseAssessment> {
   const base = process.env.NEXT_PUBLIC_API_BASE;
@@ -11,6 +11,20 @@ export async function investigate(question: string): Promise<CaseAssessment> {
   });
   if (!res.ok) {
     throw new Error(`investigate failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as CaseAssessment;
+}
+
+export async function investigateDeep(question: string): Promise<CaseAssessment> {
+  const base = process.env.NEXT_PUBLIC_API_BASE;
+  if (!base) return mockInvestigateDeep(question);
+  const res = await fetch(`${base}/api/investigate/deep`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    throw new Error(`investigateDeep failed: ${res.status} ${res.statusText}`);
   }
   return (await res.json()) as CaseAssessment;
 }

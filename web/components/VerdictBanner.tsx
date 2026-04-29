@@ -11,6 +11,7 @@ import {
   Scale,
   Send,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import Sparkline from "./Sparkline";
 
@@ -154,10 +155,21 @@ const VERIFY_MSG_INTERVAL_MS = 900;
 const PIPELINE_MSG_MS = 700;
 const PIPELINE_STAGE_BUFFER_MS = 400;
 
+const DEEP_PHASES = [
+  "Resolving entity from question…",
+  "Traversing 2-hop entity subgraph…",
+  "Detecting graph anomaly patterns…",
+  "Retrieving MAS Notice 626 typology chunks…",
+  "Reasoning over evidence…",
+];
+const DEEP_PHASE_INTERVAL_MS = 6000;
+
 export default function VerdictBanner({
   verdict,
   riskScore,
   headline,
+  summary,
+  recommendedActions,
   txVelocity,
   riskDecomposition,
   findings,
@@ -166,10 +178,15 @@ export default function VerdictBanner({
   handedOff,
   onHandoff,
   onSarFiled,
+  onDeepAnalyze,
+  deepAnalyzing = false,
+  deepAnalysisDone = false,
 }: {
   verdict: Verdict;
   riskScore: number;
   headline: string;
+  summary?: string;
+  recommendedActions?: string[];
   txVelocity: number[];
   riskDecomposition: RiskDecompositionBar[];
   findings: Finding[];
@@ -178,6 +195,9 @@ export default function VerdictBanner({
   handedOff: boolean;
   onHandoff: () => void;
   onSarFiled: () => void;
+  onDeepAnalyze?: () => void;
+  deepAnalyzing?: boolean;
+  deepAnalysisDone?: boolean;
 }) {
   const meta = VERDICT_META[verdict];
   const maxTx = Math.max(...txVelocity, 1);
@@ -216,6 +236,26 @@ export default function VerdictBanner({
     >,
   );
   const [thoughtMsg, setThoughtMsg] = useState<Record<string, string>>({});
+
+  const [deepPhaseIdx, setDeepPhaseIdx] = useState(0);
+  const [deepElapsed, setDeepElapsed] = useState(0);
+  useEffect(() => {
+    if (!deepAnalyzing) {
+      setDeepPhaseIdx(0);
+      setDeepElapsed(0);
+      return;
+    }
+    setDeepPhaseIdx(0);
+    setDeepElapsed(0);
+    const phaseTimer = setInterval(() => {
+      setDeepPhaseIdx((i) => Math.min(i + 1, DEEP_PHASES.length - 1));
+    }, DEEP_PHASE_INTERVAL_MS);
+    const elapsedTimer = setInterval(() => setDeepElapsed((s) => s + 1), 1000);
+    return () => {
+      clearInterval(phaseTimer);
+      clearInterval(elapsedTimer);
+    };
+  }, [deepAnalyzing]);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -324,11 +364,64 @@ export default function VerdictBanner({
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3 className="mb-2 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-on-surface">
-            <Scale size={16} strokeWidth={2} className="text-primary" />
-            Analyst Recommendation
-          </h3>
-          <p className="mb-4 text-base font-medium leading-relaxed text-[#191c1d]">{headline}</p>
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-on-surface">
+              <Scale size={16} strokeWidth={2} className="text-primary" />
+              Analyst Recommendation
+            </h3>
+            {onDeepAnalyze && !deepAnalyzing && !deepAnalysisDone && (
+              <button
+                type="button"
+                onClick={onDeepAnalyze}
+                className="flex h-7 items-center gap-1.5 rounded-sm border border-primary/30 bg-primary-fixed/30 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-on-primary-fixed-variant transition-colors hover:bg-primary-fixed/50"
+                title="Run the full H2OGPTe agent loop (30-90s)"
+              >
+                <Sparkles size={12} strokeWidth={2.5} />
+                Run Deep Analysis
+              </button>
+            )}
+            {deepAnalysisDone && (
+              <span className="flex h-7 items-center gap-1.5 rounded-sm border border-primary/40 bg-primary-fixed/40 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-on-primary-fixed-variant">
+                <Sparkles size={12} strokeWidth={2.5} />
+                Deep Analysis · Done
+              </span>
+            )}
+          </div>
+          <p className="mb-2 text-base font-medium leading-relaxed text-[#191c1d]">{headline}</p>
+          {deepAnalyzing && (
+            <div className="mb-3 flex items-center gap-3 rounded border border-primary/30 bg-primary-fixed/20 px-3 py-2">
+              <Loader2 size={14} strokeWidth={2.25} className="shrink-0 animate-spin text-primary" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-on-primary-fixed-variant">
+                  H2OGPTe agent · step {Math.min(deepPhaseIdx + 1, DEEP_PHASES.length)} of {DEEP_PHASES.length}
+                </div>
+                <div className="truncate text-[12.5px] italic text-on-surface">
+                  {DEEP_PHASES[deepPhaseIdx]}
+                </div>
+              </div>
+              <span className="shrink-0 font-mono text-[11px] tabular-nums text-on-surface-variant">
+                {deepElapsed}s
+              </span>
+            </div>
+          )}
+          {summary && (
+            <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant">{summary}</p>
+          )}
+          {recommendedActions && recommendedActions.length > 0 && (
+            <div className="mb-4 rounded border border-surface-container-high bg-surface-container-low p-3">
+              <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-on-surface-variant">
+                Recommended actions
+              </div>
+              <ul className="space-y-1 text-[12.5px] leading-snug text-on-surface">
+                {recommendedActions.map((a, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="mt-1 inline-block h-1 w-1 shrink-0 rounded-full bg-primary" />
+                    <span>{a}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="grid grid-cols-12 gap-6 border-t border-surface-container-high pt-4">
             <div className="col-span-12 lg:col-span-7">

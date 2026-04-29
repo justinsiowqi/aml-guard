@@ -8,6 +8,7 @@ single-agent financial crime investigation over the AML knowledge graph.
 from __future__ import annotations
 
 import logging
+import re
 
 from src.core.client import create_client
 from src.core.config import get_agent_config
@@ -18,6 +19,36 @@ from src.mcp.schema import (
     GRAPH_SCHEMA_HINT,
     PATTERN_HINTS,
 )
+
+_VALID_VERDICTS = {"HIGH_RISK", "MEDIUM_RISK", "LOW_RISK", "CLEARED"}
+
+# Field extractors — all lenient. Missing field → safe default (no exceptions).
+_RE_VERDICT = re.compile(r"^\s*VERDICT\s*:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
+_RE_SCORE = re.compile(r"^\s*RISK_SCORE\s*:\s*([0-9]*\.?[0-9]+)", re.IGNORECASE | re.MULTILINE)
+_RE_SUMMARY = re.compile(
+    r"^\s*SUMMARY\s*:\s*(.+?)(?=^\s*[A-Z][A-Z_]{2,}\s*:|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+_RE_TYPOLOGIES = re.compile(r"^\s*TRIGGERED_TYPOLOGIES\s*:\s*(.+?)$", re.IGNORECASE | re.MULTILINE)
+_RE_CHUNKS = re.compile(r"^\s*CITED_CHUNKS\s*:\s*(.+?)$", re.IGNORECASE | re.MULTILINE)
+_RE_ACTIONS = re.compile(
+    r"^\s*RECOMMENDED_ACTIONS\s*:\s*\n?(.+?)(?=^\s*[A-Z][A-Z_]{2,}\s*:|\Z)",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+_RE_BULLET = re.compile(r"^\s*[-*•]\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _csv_list(raw: str | None) -> list[str]:
+    if not raw or raw.strip().upper() == "NONE":
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip() and p.strip().upper() != "NONE"]
+
+
+def _parse_actions(block: str | None) -> list[str]:
+    if not block:
+        return []
+    bullets = [m.group(1).strip() for m in _RE_BULLET.finditer(block)]
+    return [b for b in bullets if b]
 
 logger = logging.getLogger(__name__)
 
@@ -108,11 +139,39 @@ class AMLAgent:
         return self._parse_response(reply.content)
 
     def _parse_response(self, content: str) -> AMLRiskResponse:
-        """
-        Parse the H2OGPTe reply into an AMLRiskResponse.
+        """Parse the H2OGPTe reply into an AMLRiskResponse.
 
-        TODO: extract VERDICT, RISK_SCORE, SUMMARY, TRIGGERED_TYPOLOGIES,
-              and RECOMMENDED_ACTIONS from the structured output text using
-              regex, then populate and return AMLRiskResponse.
+        Lenient: any missing or malformed field falls back to a safe default
+        (CLEARED / 0.0 / empty list). Raw `content` is preserved in `answer`.
         """
-        raise NotImplementedError("_parse_response() not yet implemented.")
+        raw_verdict = (_RE_VERDICT.search(content) or [None, ""])[1]
+        verdict = raw_verdict.upper() if raw_verdict else ""
+        if verdict not in _VALID_VERDICTS:
+            verdict = "CLEARED"
+
+        score_match = _RE_SCORE.search(content)
+        try:
+            score = float(score_match.group(1)) if score_match else 0.0
+        except (TypeError, ValueError):
+            score = 0.0
+        score = max(0.0, min(1.0, score))
+
+        typologies = _csv_list(
+            (_RE_TYPOLOGIES.search(content) or [None, None])[1]
+        )
+        chunk_ids = _csv_list(
+            (_RE_CHUNKS.search(content) or [None, None])[1]
+        )
+        actions_block = _RE_ACTIONS.search(content)
+        actions = _parse_actions(actions_block.group(1) if actions_block else None)
+
+        return AMLRiskResponse(
+            session_id="",
+            question="",
+            answer=content,
+            verdict=verdict,
+            risk_score=score,
+            triggered_typologies=typologies,
+            cited_chunks=[{"chunk_id": cid} for cid in chunk_ids],
+            recommended_actions=actions,
+        )

@@ -1,4 +1,8 @@
 agents:
   aml:
-    llm: "openai/gpt-oss-20b"
+    llm: "openai/gpt-5.2"
     temperature: 0.0
+  aml_narrative:
+    llm: "openai/gpt-5.2"
+    temperature: 0.2
+    timeout_seconds: 30

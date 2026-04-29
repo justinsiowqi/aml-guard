@@ -104,4 +104,6 @@ export interface CaseAssessment {
   investigation_steps: InvestigationStep[];
   subgraph: { nodes: SubgraphNode[]; edges: SubgraphEdge[] };
   created_at: string;            // ISO
+  summary?: string;              // LLM-generated narrative paragraph (Phase 1 narrator)
+  recommended_actions?: string[];// LLM-generated next-step list (Phase 1 narrator)
 }

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { CaseAssessment, InvestigationStep } from "@/lib/types";
-import { investigate } from "@/lib/api";
+import { investigate, investigateDeep } from "@/lib/api";
 import QuestionBar from "@/components/QuestionBar";
 import TopHeader from "@/components/TopHeader";
 import EntityHeader from "@/components/EntityHeader";
@@ -56,7 +56,23 @@ export default function InvestigatePage() {
   const [placeholderSteps, setPlaceholderSteps] = useState<InvestigationStep[]>([]);
   const [handedOff, setHandedOff] = useState(false);
   const [sarFiled, setSarFiled] = useState(false);
+  const [deepAnalyzing, setDeepAnalyzing] = useState(false);
+  const [deepAnalysisDone, setDeepAnalysisDone] = useState(false);
   const subjectRef = useRef<HTMLDivElement | null>(null);
+
+  async function runDeepAnalysis() {
+    if (!question || deepAnalyzing) return;
+    setDeepAnalyzing(true);
+    try {
+      const merged = await investigateDeep(question);
+      setAssessment((prev) => (prev ? { ...prev, ...merged } : merged));
+      setDeepAnalysisDone(true);
+    } catch (err) {
+      console.error("Deep analysis failed:", err);
+    } finally {
+      setDeepAnalyzing(false);
+    }
+  }
 
   async function handleSubmit(q: string) {
     setQuestion(q);
@@ -64,6 +80,8 @@ export default function InvestigatePage() {
     setAssessment(null);
     setHandedOff(false);
     setSarFiled(false);
+    setDeepAnalyzing(false);
+    setDeepAnalysisDone(false);
     const startedAt = Date.now();
     setStartedAt(startedAt);
     setPlaceholderSteps(buildPlaceholderSteps(startedAt));
@@ -141,6 +159,8 @@ export default function InvestigatePage() {
                     verdict={assessment.verdict}
                     riskScore={assessment.risk_score}
                     headline={assessment.headline}
+                    summary={assessment.summary}
+                    recommendedActions={assessment.recommended_actions}
                     txVelocity={assessment.tx_velocity}
                     riskDecomposition={assessment.risk_decomposition}
                     findings={assessment.findings}
@@ -149,6 +169,9 @@ export default function InvestigatePage() {
                     handedOff={handedOff}
                     onHandoff={() => setHandedOff(true)}
                     onSarFiled={() => setSarFiled(true)}
+                    onDeepAnalyze={runDeepAnalysis}
+                    deepAnalyzing={deepAnalyzing}
+                    deepAnalysisDone={deepAnalysisDone}
                   />
                 ) : (
                   <div className="flex h-full min-h-[220px] items-center justify-center rounded border border-dashed border-outline-variant/40 bg-surface-container-lowest p-8 text-sm text-on-surface-variant">
