@@ -12,7 +12,7 @@ import re
 
 from src.core.client import create_client
 from src.core.config import get_agent_config
-from src.core.setup import create_collection, create_chat, register_mcp_tool
+from src.core.setup import create_collection, create_chat, register_mcp_tool, setup_agent_keys, upload_and_ingest_mcp
 from src.core.prompt_loader import load_prompt, load_message
 from src.mcp.schema import (
     AMLRiskResponse,
@@ -98,12 +98,17 @@ class AMLAgent:
             collection_name="AML Guard",
             collection_desc="AML investigation knowledge graph collection.",
         )
+        self._upload_id = upload_and_ingest_mcp(
+            self._client,
+            collection_id=self._collection_id,
+        )
         self._tool_ids = register_mcp_tool(self._client)
         logger.info(
             "AMLAgent setup complete. collection=%s tools=%s",
             self._collection_id,
             self._tool_ids,
         )
+        setup_agent_keys(self._client)
 
     def run(self, question: str) -> AMLRiskResponse:
         """
@@ -129,10 +134,17 @@ class AMLAgent:
                 message=user_message,
                 system_prompt=_SYSTEM_PROMPT,
                 llm=self._config.get("llm"),
-                llm_args={
-                    "temperature": self._config.get("temperature", 0.0),
-                },
-                timeout=120,
+                llm_args=dict(
+                    temperature=self._config.get("temperature"),
+                    use_agent=True,
+                    agent_accuracy=self._config.get("agent_accuracy"),
+                    agent_max_turns=self._config.get("agent_max_turns"),
+                    agent_type=self._config.get("agent_type"),
+                    agent_timeout=self._config.get("agent_timeout"),
+                    agent_total_timeout=self._config.get("agent_total_timeout"),
+                    agent_tools=self._config.get("agent_tools"),
+                ),
+                rag_config={"rag_type": "llm_only"},
             )
 
         logger.info("H2OGPTe reply received.")
