@@ -13,7 +13,8 @@ export type ToolName =
   | "traverse_entity_network"
   | "detect_graph_anomalies"
   | "retrieve_typology_chunks"
-  | "trace_evidence";
+  | "trace_evidence"
+  | "narrative_synthesis";
 
 export type PatternName =
   | "transaction_structuring"

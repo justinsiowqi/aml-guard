@@ -18,6 +18,8 @@ import json
 import logging
 import os
 import re
+import time
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
@@ -45,16 +47,39 @@ def enrich_with_narrative(case: dict[str, Any]) -> dict[str, Any]:
     """
     if os.getenv("AML_USE_AGENT_NARRATIVE") != "1":
         return case
+    started = time.perf_counter()
     try:
         narrative = _call_narrator(case)
     except Exception as e:
         logger.warning("Narrator failed (%s) — falling back to deterministic narrative.", e)
         return case
+    elapsed_s = time.perf_counter() - started
     try:
-        return _merge(case, narrative)
+        merged = _merge(case, narrative)
     except Exception as e:
         logger.warning("Narrator merge failed (%s) — returning deterministic case.", e)
         return case
+    return _append_narrator_step(merged, elapsed_s)
+
+
+def _append_narrator_step(case: dict[str, Any], elapsed_s: float) -> dict[str, Any]:
+    """Add a narrative_synthesis step to investigation_steps so the UI stream
+    has a fourth tile reflecting the LLM call we just made."""
+    steps = list(case.get("investigation_steps") or [])
+    findings_count = len(case.get("findings") or [])
+    chunks_count = len(case.get("typology_chunks") or [])
+    steps.append({
+        "tool": "narrative_synthesis",
+        "summary": (
+            f"Drafted analyst narrative from {findings_count} finding"
+            f"{'' if findings_count == 1 else 's'} and {chunks_count} chunk"
+            f"{'' if chunks_count == 1 else 's'} ({elapsed_s:.1f}s)."
+        ),
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    })
+    out = dict(case)
+    out["investigation_steps"] = steps
+    return out
 
 
 def _call_narrator(case: dict[str, Any]) -> dict[str, Any]:

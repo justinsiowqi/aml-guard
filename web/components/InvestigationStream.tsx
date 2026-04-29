@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import type { InvestigationStep, ToolName } from "@/lib/types";
 
 type Tone = "primary" | "error";
@@ -12,6 +12,7 @@ const TOOL_TITLE: Record<ToolName, string> = {
   detect_graph_anomalies: "Typology Matching",
   retrieve_typology_chunks: "Evidence Retrieval",
   trace_evidence: "Transaction Monitoring",
+  narrative_synthesis: "Narrative Synthesis",
 };
 
 const TOOL_TONE: Record<ToolName, Tone> = {
@@ -19,7 +20,25 @@ const TOOL_TONE: Record<ToolName, Tone> = {
   detect_graph_anomalies: "primary",
   retrieve_typology_chunks: "primary",
   trace_evidence: "primary",
+  narrative_synthesis: "primary",
 };
+
+const NARRATIVE_THOUGHTS = [
+  "Composing analyst headline from fired typologies…",
+  "Cross-referencing top regulatory citations…",
+  "Drafting per-finding narratives with H2OGPTe…",
+  "Summarising risk decomposition for handover…",
+  "Generating recommended actions list…",
+  "Validating evidence-grounded claims…",
+];
+
+const GENERIC_THOUGHTS = [
+  "Polling tool result…",
+  "Parsing response payload…",
+  "Updating evidence ledger…",
+];
+
+const THOUGHT_INTERVAL_MS = 1800;
 
 const DOT_TONE: Record<Tone, string> = {
   primary: "bg-primary",
@@ -42,6 +61,7 @@ export default function InvestigationStream({
 }) {
   const [revealedCount, setRevealedCount] = useState(0);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [thoughtIdx, setThoughtIdx] = useState(0);
 
   const toggleExpanded = (i: number) => {
     setExpanded((prev) => {
@@ -64,7 +84,25 @@ export default function InvestigationStream({
     return () => timers.forEach(clearTimeout);
   }, [steps]);
 
+  // Cycle the rolling thought messages on the active step while still streaming.
+  useEffect(() => {
+    if (!isStreaming) return;
+    setThoughtIdx(0);
+    const id = setInterval(
+      () => setThoughtIdx((i) => i + 1),
+      THOUGHT_INTERVAL_MS,
+    );
+    return () => clearInterval(id);
+  }, [isStreaming, revealedCount]);
+
   const visible = isStreaming ? steps.slice(0, revealedCount) : steps;
+  const activeIdx = isStreaming ? revealedCount - 1 : -1;
+
+  const runningThought = (step: InvestigationStep): string => {
+    const pool =
+      step.tool === "narrative_synthesis" ? NARRATIVE_THOUGHTS : GENERIC_THOUGHTS;
+    return pool[thoughtIdx % pool.length];
+  };
 
   return (
     <div className="flex h-full max-h-[380px] flex-col rounded bg-[#edeeef] p-6">
@@ -104,15 +142,28 @@ export default function InvestigationStream({
                   className="relative"
                 >
                   <div
-                    className={`absolute -left-[18px] top-0 h-3 w-3 rounded-full ring-4 ring-[#edeeef] ${DOT_TONE[tone]}`}
+                    className={`absolute -left-[18px] top-0 h-3 w-3 rounded-full ring-4 ring-[#edeeef] ${DOT_TONE[tone]} ${i === activeIdx ? "animate-pulse" : ""}`}
                   />
-                  <div className="mb-1 font-mono text-xs text-on-surface-variant">
-                    {formatTime(step.timestamp)}
+                  <div className="mb-1 flex items-center gap-2 font-mono text-xs text-on-surface-variant">
+                    <span>{formatTime(step.timestamp)}</span>
+                    {i === activeIdx && (
+                      <Loader2
+                        size={11}
+                        strokeWidth={2.5}
+                        className="animate-spin text-primary"
+                      />
+                    )}
                   </div>
                   <div className={`text-sm font-bold ${TITLE_TONE[tone]}`}>{title}</div>
                   {isStreaming ? (
                     <div className="mt-1 text-xs text-on-surface-variant">
-                      {step.summary}
+                      {i === activeIdx ? (
+                        <span className="italic text-primary">
+                          {runningThought(step)}
+                        </span>
+                      ) : (
+                        step.summary
+                      )}
                     </div>
                   ) : (
                     <button

@@ -14,7 +14,7 @@ import EntitySubgraph from "@/components/EntitySubgraph";
 
 type Phase = "idle" | "streaming" | "settled";
 
-const STEP_OFFSET_SECONDS = [0, 2, 5, 7, 8];
+const STEP_OFFSET_SECONDS = [0, 2, 4, 6, 8];
 const SETTLE_BUFFER_MS = 500;
 
 const PLACEHOLDER_STEP_TEMPLATE: Omit<InvestigationStep, "timestamp">[] = [
@@ -29,6 +29,10 @@ const PLACEHOLDER_STEP_TEMPLATE: Omit<InvestigationStep, "timestamp">[] = [
   {
     tool: "retrieve_typology_chunks",
     summary: "Retrieving regulatory citations per fired pattern…",
+  },
+  {
+    tool: "narrative_synthesis",
+    summary: "Drafting analyst narrative with H2OGPTe…",
   },
 ];
 
