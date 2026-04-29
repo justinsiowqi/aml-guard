@@ -1,4 +1,13 @@
 agents:
   aml:
     llm: "openai/gpt-oss-120b"
-    temperature: 0.0
+    temperature: 0.5
+    agent_accuracy: "standard"
+    agent_max_turns: 20
+    agent_type: "general"
+    agent_timeout: 2000
+    agent_total_timeout: 2000
+    agent_tools:
+      - "aml_guard_mcp.zip"
+      - "mermaid_renderer.py"
+      - "claude_tool_runner.py"

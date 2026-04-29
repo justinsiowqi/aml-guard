@@ -98,17 +98,25 @@ class AMLAgent:
         chat_session_id = create_chat(self._client, self._collection_id)
         logger.info("Chat session created: %s", chat_session_id)
 
-        with self._client.connect(chat_session_id) as session:
-            reply = session.query(
-                message=user_message,
-                system_prompt=_SYSTEM_PROMPT,
-                llm=self._config.get("llm"),
-                llm_args={
-                    "temperature": self._config.get("temperature", 0.0),
-                },
-                timeout=120,
-            )
+        print(self._config)
+
+        # with self._client.connect(chat_session_id) as session:
+        #     reply = session.query(
+        #         message=user_message,
+        #         system_prompt=_SYSTEM_PROMPT,
+        #         llm=self._config.get("llm"),
+        #         llm_args=dict(
+        #             temperature=self._config.get("temperature"),
+        #             use_agent=True,
+        #             agent_accuracy=self._config.get("agent_accuracy"),
+        #             agent_max_turns=self._config.get("agent_max_turns"),
+        #             agent_type=self._config.get("agent_type"),
+        #             agent_timeout=self._config.get("agent_timeout"),
+        #             agent_total_timeout=self._config.get("agent_total_timeout"),
+        #             agent_tools=self._config.get("agent_tools"),
+        #         ),
+        #         rag_config={"rag_type": "llm_only"},
+        #     )
 
         logger.info("H2OGPTe reply received.")
         return reply.content
-

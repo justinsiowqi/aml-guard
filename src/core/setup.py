@@ -7,7 +7,7 @@ from h2ogpte import H2OGPTE
 
 BASE_DIR = os.path.dirname(__file__)
 SERVER_FILENAME = 'aml_guard_mcp.zip'
-SERVER_FILE = os.path.join(BASE_DIR, '..', '..', 'mcp_server', SERVER_FILENAME)
+SERVER_FILE = os.path.join(BASE_DIR, '..', 'mcp', SERVER_FILENAME)
 
 
 def create_collection(client: H2OGPTE, collection_name: str, collection_desc: str) -> str:
