@@ -12,7 +12,14 @@ import re
 
 from src.core.client import create_client
 from src.core.config import get_agent_config
-from src.core.setup import create_collection, create_chat, register_mcp_tool, setup_agent_keys, upload_and_ingest_mcp
+from src.core.setup import (
+    SERVER_FILENAME,
+    create_collection,
+    create_chat,
+    register_mcp_tool,
+    setup_agent_keys,
+    upload_and_ingest_mcp,
+)
 from src.core.prompt_loader import load_prompt, load_message
 from src.mcp.schema import (
     AMLRiskResponse,
@@ -110,6 +117,31 @@ class AMLAgent:
         )
         setup_agent_keys(self._client)
 
+        # Use print() for these diagnostics so they're visible without
+        # having to configure the root logger to INFO level.
+        try:
+            tools = self._client.get_custom_agent_tools()
+            print(f"[diag] get_custom_agent_tools() -> {len(tools or [])} tools")
+            for t in (tools or []):
+                print(
+                    f"  tool name={getattr(t, 'tool_name', None)} "
+                    f"type={getattr(t, 'tool_type', None)} "
+                    f"id={getattr(t, 'id', None)}"
+                )
+        except Exception as e:
+            print(f"[diag] get_custom_agent_tools() failed: {e}")
+        try:
+            prefs = self._client.get_agent_tool_preference() or []
+            in_prefs = SERVER_FILENAME in prefs
+            print(
+                f"[diag] get_agent_tool_preference(): {SERVER_FILENAME} "
+                f"{'ENABLED' if in_prefs else 'MISSING'} (list size={len(prefs)})"
+            )
+            if not in_prefs:
+                print(f"[diag] WARNING: agent will NOT see {SERVER_FILENAME} functions.")
+        except Exception as e:
+            print(f"[diag] get_agent_tool_preference() failed: {e}")
+
     def run(self, question: str) -> AMLRiskResponse:
         """
         Run a single AML investigation and return a structured risk response.
@@ -129,6 +161,12 @@ class AMLAgent:
         chat_session_id = create_chat(self._client, self._collection_id)
         logger.info("Chat session created: %s", chat_session_id)
 
+        # SDK-level HTTP timeout. Must be >= agent_total_timeout (server-side
+        # cap on the whole agent loop) plus a small margin, otherwise the
+        # client tears down the connection while the agent is still running
+        # and we get the spurious "Request timed out" error from session.py.
+        sdk_timeout = max(600, int(self._config.get("agent_total_timeout") or 0) + 60)
+
         with self._client.connect(chat_session_id) as session:
             reply = session.query(
                 message=user_message,
@@ -145,9 +183,35 @@ class AMLAgent:
                     agent_tools=self._config.get("agent_tools"),
                 ),
                 rag_config={"rag_type": "llm_only"},
+                timeout=sdk_timeout,
             )
 
-        logger.info("H2OGPTe reply received.")
+        print(
+            f"[diag] H2OGPTe reply received. content_len={len(reply.content or '')} "
+            f"input_tokens={getattr(reply, 'input_tokens', '?')} "
+            f"output_tokens={getattr(reply, 'output_tokens', '?')} "
+            f"error={getattr(reply, 'error', None)}"
+        )
+        # Dump the chat-session messages so we can see whether tool calls
+        # actually fired. Each tool invocation usually shows up as a
+        # ChatMessage with type_list containing "tool" entries.
+        try:
+            messages = self._client.list_chat_messages(
+                chat_session_id, offset=0, limit=50
+            )
+            if messages:
+                print(f"[diag] Chat session {chat_session_id} produced {len(messages)} messages.")
+                for m in messages:
+                    preview = (getattr(m, "content", "") or "")[:200].replace("\n", " ")
+                    print(
+                        f"  msg id={getattr(m, 'id', '?')} "
+                        f"type_list={getattr(m, 'type_list', None)} "
+                        f"len(content)={len(getattr(m, 'content', '') or '')} "
+                        f"preview={preview!r}"
+                    )
+        except Exception as e:
+            print(f"[diag] list_chat_messages diagnostics failed: {e}")
+
         return self._parse_response(reply.content)
 
     def _parse_response(self, content: str) -> AMLRiskResponse:

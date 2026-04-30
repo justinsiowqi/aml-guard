@@ -5,8 +5,12 @@ agents:
     agent_accuracy: "standard"
     agent_max_turns: 20
     agent_type: "general"
-    agent_timeout: 2000
-    agent_total_timeout: 2000
+    # Both timeouts are in SECONDS per H2OGPTe SDK docs. Defaults are 3600s
+    # (1h). Sized to give the full 3-step workflow (traverse + detect +
+    # retrieve_typology_chunks) room to complete; Step 2 alone can run
+    # ~3-5min when the agent is in Coder mode with bash/read available.
+    agent_timeout: 180        # per-turn cap (3 min)
+    agent_total_timeout: 900  # whole-loop cap (15 min)
     agent_tools:
       - "aml_guard_mcp.zip"
       - "mermaid_renderer.py"
