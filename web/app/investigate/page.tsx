@@ -1,13 +1,21 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { CaseAssessment, InvestigationStep } from "@/lib/types";
-import { investigate, investigateDeep } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import type { CaseAssessment, DeepStatus, InvestigationStep } from "@/lib/types";
+import {
+  cancelDeepAnalysis,
+  getDeepStatus,
+  investigate,
+  startDeepAnalysis,
+} from "@/lib/api";
+
+const DEEP_POLL_INTERVAL_MS = 2500;
 import QuestionBar from "@/components/QuestionBar";
 import TopHeader from "@/components/TopHeader";
 import EntityHeader from "@/components/EntityHeader";
 import InvestigationStream from "@/components/InvestigationStream";
 import VerdictBanner from "@/components/VerdictBanner";
+import AgentTranscript from "@/components/AgentTranscript";
 import FindingsList from "@/components/FindingsList";
 import TypologyEvidence from "@/components/TypologyEvidence";
 import EntitySubgraph from "@/components/EntitySubgraph";
@@ -62,21 +70,72 @@ export default function InvestigatePage() {
   const [sarFiled, setSarFiled] = useState(false);
   const [deepAnalyzing, setDeepAnalyzing] = useState(false);
   const [deepAnalysisDone, setDeepAnalysisDone] = useState(false);
+  const [deepJobId, setDeepJobId] = useState<string | null>(null);
+  const [deepStatus, setDeepStatus] = useState<DeepStatus | null>(null);
+  const [deepError, setDeepError] = useState<string | null>(null);
   const subjectRef = useRef<HTMLDivElement | null>(null);
 
   async function runDeepAnalysis() {
     if (!question || deepAnalyzing) return;
     setDeepAnalyzing(true);
+    setDeepError(null);
+    setDeepStatus(null);            // drop any stale events from a prior failed run
+    setDeepAnalysisDone(false);
     try {
-      const merged = await investigateDeep(question);
-      setAssessment((prev) => (prev ? { ...prev, ...merged } : merged));
-      setDeepAnalysisDone(true);
+      const { job_id } = await startDeepAnalysis(question);
+      setDeepJobId(job_id);
     } catch (err) {
-      console.error("Deep analysis failed:", err);
-    } finally {
+      console.error("Deep analysis failed to start:", err);
+      setDeepError(err instanceof Error ? err.message : String(err));
       setDeepAnalyzing(false);
     }
   }
+
+  async function stopWatchingDeep() {
+    if (!deepJobId) return;
+    try {
+      await cancelDeepAnalysis(deepJobId);
+    } catch (err) {
+      console.warn("cancelDeepAnalysis failed (ignoring):", err);
+    }
+    setDeepJobId(null);
+    setDeepAnalyzing(false);
+    setDeepStatus(null);
+  }
+
+  useEffect(() => {
+    if (!deepJobId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await getDeepStatus(deepJobId);
+        if (cancelled) return;
+        setDeepStatus(s);
+        if (s.status === "done" && s.result) {
+          setAssessment((prev) => (prev ? { ...prev, ...s.result! } : s.result));
+          setDeepAnalysisDone(true);
+          setDeepAnalyzing(false);
+          setDeepJobId(null);
+        } else if (s.status === "error") {
+          setDeepError(s.error ?? "Deep analysis errored");
+          setDeepAnalyzing(false);
+          setDeepJobId(null);
+        } else if (s.status === "cancelled") {
+          setDeepAnalyzing(false);
+          setDeepJobId(null);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("getDeepStatus poll failed (will retry):", err);
+      }
+    };
+    void tick();
+    const t = setInterval(tick, DEEP_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [deepJobId]);
 
   async function handleSubmit(q: string) {
     setQuestion(q);
@@ -86,6 +145,9 @@ export default function InvestigatePage() {
     setSarFiled(false);
     setDeepAnalyzing(false);
     setDeepAnalysisDone(false);
+    setDeepJobId(null);
+    setDeepStatus(null);
+    setDeepError(null);
     const startedAt = Date.now();
     setStartedAt(startedAt);
     setPlaceholderSteps(buildPlaceholderSteps(startedAt));
@@ -174,8 +236,11 @@ export default function InvestigatePage() {
                     onHandoff={() => setHandedOff(true)}
                     onSarFiled={() => setSarFiled(true)}
                     onDeepAnalyze={runDeepAnalysis}
+                    onStopWatchingDeep={stopWatchingDeep}
                     deepAnalyzing={deepAnalyzing}
                     deepAnalysisDone={deepAnalysisDone}
+                    deepStatus={deepStatus}
+                    deepError={deepError}
                   />
                 ) : (
                   <div className="flex h-full min-h-[220px] items-center justify-center rounded border border-dashed border-outline-variant/40 bg-surface-container-lowest p-8 text-sm text-on-surface-variant">
@@ -194,6 +259,15 @@ export default function InvestigatePage() {
 
             {phase === "settled" && assessment && (
               <>
+                {(deepAnalyzing || deepAnalysisDone || (deepStatus?.agent_events?.length ?? 0) > 0) && (
+                  <AgentTranscript
+                    events={deepStatus?.agent_events ?? []}
+                    isRunning={deepAnalyzing}
+                    elapsedSeconds={deepStatus?.elapsed_seconds ?? 0}
+                    phaseLabel={deepStatus?.phase_label ?? ""}
+                  />
+                )}
+
                 <div className="mb-6 grid grid-cols-12 items-start gap-6">
                   <div className="col-span-12 lg:col-span-8">
                     <FindingsList

@@ -53,6 +53,22 @@ export interface InvestigationStep {
   timestamp: string;             // ISO
 }
 
+/**
+ * One card in the live AgentTranscript panel that appears below the verdict
+ * during deep analysis. Each event maps to one turn of H2OGPTe's Coder
+ * Agent loop (or to its overall plan / final usage stats).
+ */
+export interface AgentTranscriptEvent {
+  id: string;
+  kind: "turn" | "agent_analysis" | "final_summary";
+  turn_idx: number;              // -1 for agent_analysis, 999 for final_summary, 0..N for turns
+  title: string;
+  message: string;               // agent's narration of what happened in this turn
+  code: string | null;           // optional code block the agent executed
+  files: string[];               // optional artifact filenames produced
+  timestamp: string;             // ISO
+}
+
 export interface SubgraphNode {
   id: string;
   label: string;
@@ -82,6 +98,20 @@ export interface ConnectionFocus {
   risk_tier: "HIGH" | "MEDIUM" | "LOW";
   relationship_summary: string;  // e.g. "Intermediary of, Shares address with"
   link_count: number;
+}
+
+export type DeepJobStatus = "running" | "done" | "error" | "cancelled";
+
+export interface DeepStatus {
+  status: DeepJobStatus;
+  phase_idx: number;
+  phase_label: string;
+  elapsed_seconds: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  agent_events: AgentTranscriptEvent[];
+  result: CaseAssessment | null;
+  error: string | null;
 }
 
 export interface CaseAssessment {

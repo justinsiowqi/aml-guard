@@ -44,6 +44,8 @@ def traverse_entity_network(
     For Intermediary entities, also returns the full intermediary network
     (all companies set up and their jurisdictions).
     """
+    logger.info("[tool-call] traverse_entity_network entity_id=%s entity_type=%s depth=%s",
+                entity_id, entity_type, depth)
     subgraph = get_entity_subgraph(conn, entity_id)
     network  = get_entity_network(conn, entity_id, depth)
 
@@ -74,6 +76,8 @@ def detect_graph_anomalies(
     that report on the seed's *context* (intermediaries, jurisdictions)
     aren't dropped because they don't repeat the seed's name.
     """
+    logger.info("[tool-call] detect_graph_anomalies patterns=%s entity_id=%s",
+                pattern_names, entity_id)
     unknown = [n for n in pattern_names if n not in ANOMALY_REGISTRY]
     if unknown:
         logger.warning("Unknown pattern names requested: %s", unknown)
@@ -137,6 +141,8 @@ def retrieve_typology_chunks(
           ]
         }
     """
+    logger.info("[tool-call] retrieve_typology_chunks typology_id=%s top_k=%s query=%r",
+                typology_id, top_k, (query_text or "")[:80])
     from h2ogpte import H2OGPTE
 
     h2ogpte_url = os.getenv("H2OGPTE_URL") or os.getenv("H2OGPTE_ADDRESS")

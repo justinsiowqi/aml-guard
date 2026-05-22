@@ -1,5 +1,5 @@
 # Core AI & Graph
-h2ogpte==1.6.59
+h2ogpte==1.6.60
 python-dotenv>=1.0.0
 
 # Data loading

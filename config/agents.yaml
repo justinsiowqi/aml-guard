@@ -1,6 +1,6 @@
 agents:
   aml:
-    llm: "auto"
+    llm: "claude-sonnet-4-6"
     temperature: 0.5
     agent_accuracy: "standard"
     agent_max_turns: 20

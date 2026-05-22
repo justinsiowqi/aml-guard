@@ -7,8 +7,10 @@ single-agent financial crime investigation over the AML knowledge graph.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from typing import Any, Callable
 
 from src.core.client import create_client
 from src.core.config import get_agent_config
@@ -44,6 +46,37 @@ _RE_ACTIONS = re.compile(
 )
 _RE_BULLET = re.compile(r"^\s*[-*•]\s*(.+?)\s*$", re.MULTILINE)
 
+# Patterns that disqualify a parsed bullet from being a recommended action.
+# Used by _parse_actions to strip noise from the agent's actions block.
+_ACTION_NOISE = re.compile(
+    r"^[-–—]+$"                              # bare separator lines: --, ---, —
+    r"|^[*_]?would you\b"                    # follow-up question openers
+    r"|^[*_]?do you want"
+    r"|^[*_]?shall i\b"
+    r"|^[*_]?should i\b"
+    r"|^[*_]?is there\b"
+    r"|^\*{1,2}[^*]+\*{1,2}\s*$"            # line that is only bold/italic text (markdown artefact)
+    r"|\?[*_]*$",                            # anything ending in a question mark
+    re.I,
+)
+
+
+def _evidence_placeholders(case: dict[str, Any] | None) -> dict[str, str]:
+    """Render the trunk's case-assessment dict into the four JSON placeholders
+    expected by aml_message.md: subject, subgraph, findings, typology_chunks.
+
+    Each is a pretty-printed JSON block (indent=2) so the agent can scan it as
+    plain text. Missing keys render as `{}` / `[]` so the prompt still has a
+    syntactically valid placeholder even in degraded cases.
+    """
+    case = case or {}
+    return {
+        "subject": json.dumps(case.get("subject") or {}, indent=2, ensure_ascii=False),
+        "subgraph": json.dumps(case.get("subgraph") or {"nodes": [], "edges": []}, indent=2, ensure_ascii=False),
+        "findings": json.dumps(case.get("findings") or [], indent=2, ensure_ascii=False),
+        "typology_chunks": json.dumps(case.get("typology_chunks") or [], indent=2, ensure_ascii=False),
+    }
+
 
 def _csv_list(raw: str | None) -> list[str]:
     if not raw or raw.strip().upper() == "NONE":
@@ -54,8 +87,17 @@ def _csv_list(raw: str | None) -> list[str]:
 def _parse_actions(block: str | None) -> list[str]:
     if not block:
         return []
-    bullets = [m.group(1).strip() for m in _RE_BULLET.finditer(block)]
-    return [b for b in bullets if b]
+    actions: list[str] = []
+    for m in _RE_BULLET.finditer(block):
+        text = m.group(1).strip()
+        # Strip markdown bold/italic wrappers from the whole action text.
+        text = re.sub(r"^\*{1,2}(.+?)\*{1,2}$", r"\1", text).strip()
+        if not text:
+            continue
+        if _ACTION_NOISE.search(text):
+            continue
+        actions.append(text)
+    return actions
 
 logger = logging.getLogger(__name__)
 
@@ -142,13 +184,49 @@ class AMLAgent:
         except Exception as e:
             print(f"[diag] get_agent_tool_preference() failed: {e}")
 
-    def run(self, question: str) -> AMLRiskResponse:
+    def run(self, question: str, trunk_evidence: dict[str, Any] | None = None) -> AMLRiskResponse:
+        """Synchronous wrapper around start_async — kept for callers that don't
+        need to observe the chat_session_id while the agent loop is running."""
+        return self.start_async(
+            question,
+            on_started=lambda _csid: None,
+            on_reply=lambda _reply: None,
+            trunk_evidence=trunk_evidence,
+        )
+
+    @property
+    def client(self):
+        """Exposed for the async deep-analysis path so the job-status endpoint
+        can poll list_chat_messages without re-creating a client."""
+        return self._client
+
+    def start_async(
+        self,
+        question: str,
+        on_started: Callable[[str], None],
+        on_reply: Callable[[object], None],
+        trunk_evidence: dict[str, Any] | None = None,
+    ) -> AMLRiskResponse:
         """
-        Run a single AML investigation and return a structured risk response.
+        Run a single AML investigation, calling `on_started(chat_session_id)`
+        as soon as the chat session is created (before the long-blocking
+        session.query). This lets a caller wire the chat_session_id into a
+        job registry so a separate request can poll progress.
 
         Args:
-            question: Natural-language investigation request, e.g.
-                      "Investigate entity ENT-0042 for structuring risk."
+            question: Natural-language investigation request.
+            on_started: Called with the chat_session_id once it's available.
+                        Exceptions from this callback are logged and swallowed.
+            on_reply: Called with the raw H2OGPTe reply object once the agent
+                      loop completes (before parsing). Used to capture
+                      tokens / cost into the job registry.
+            trunk_evidence: Deterministic AML trunk results (subject, subgraph,
+                            findings, typology_chunks). Injected into the user
+                            message so the agent can synthesise the verdict
+                            without re-calling the three baseline MCP tools.
+                            See src/prompts/aml_message.md for the placeholders.
+                            If None, the agent runs in legacy mode (placeholders
+                            substituted with empty {}).
 
         Returns:
             AMLRiskResponse with verdict, risk_score, findings, and evidence.
@@ -156,10 +234,17 @@ class AMLAgent:
         if self._collection_id is None:
             raise RuntimeError("Call setup() before run().")
 
-        user_message = load_message(_AGENT_NAME).format(question=question)
+        user_message = load_message(_AGENT_NAME).format(
+            question=question,
+            **_evidence_placeholders(trunk_evidence),
+        )
 
         chat_session_id = create_chat(self._client, self._collection_id)
         logger.info("Chat session created: %s", chat_session_id)
+        try:
+            on_started(chat_session_id)
+        except Exception as e:
+            logger.warning("on_started callback raised: %s", e)
 
         # SDK-level HTTP timeout. Must be >= agent_total_timeout (server-side
         # cap on the whole agent loop) plus a small margin, otherwise the
@@ -192,6 +277,10 @@ class AMLAgent:
             f"output_tokens={getattr(reply, 'output_tokens', '?')} "
             f"error={getattr(reply, 'error', None)}"
         )
+        try:
+            on_reply(reply)
+        except Exception as e:
+            logger.warning("on_reply callback raised: %s", e)
         # Dump the chat-session messages so we can see whether tool calls
         # actually fired. Each tool invocation usually shows up as a
         # ChatMessage with type_list containing "tool" entries.

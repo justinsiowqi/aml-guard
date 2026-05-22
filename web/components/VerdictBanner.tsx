@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Finding, RiskDecompositionBar, TypologyChunk, Verdict } from "@/lib/types";
+import type {
+  DeepStatus,
+  Finding,
+  RiskDecompositionBar,
+  TypologyChunk,
+  Verdict,
+} from "@/lib/types";
 import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Circle,
@@ -12,8 +19,185 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  XCircle,
 } from "lucide-react";
 import Sparkline from "./Sparkline";
+
+// ─── SummaryBlock ────────────────────────────────────────────────────────────
+// Renders the deep-agent SUMMARY paragraph with inline entity / pattern / chunk
+// highlighting, sentence-level line breaks for readability, and a distinct
+// bordered block for the trailing "Follow-up: …" note.
+
+const _AML_PATTERNS = [
+  "bearer_obscured_ownership",
+  "common_controller_across_shells",
+  "layered_ownership",
+  "intermediary_shell_network",
+  "high_risk_jurisdiction",
+  "shared_address_cluster",
+].join("|");
+
+// Single regex that tokenises the summary into highlighted vs plain segments.
+// Groups, in priority order:
+//   1. (node_id NNNNN) references
+//   2. bare parenthesised node IDs like (10122953)
+//   3. chunk citations:  chunks 6.14-c1, 2.1-c12
+//   4. finding references:  f_bearer_obscured_ownership
+//   5. AML pattern names
+const _SUMMARY_TOKEN_RE = new RegExp(
+  `(\\(node_id \\d+\\)` +
+  `|\\(\\d{7,9}\\)` +
+  `|chunks?\\s+[\\d\\w\\.\\-]+(?:,\\s*[\\d\\w\\.\\-]+)*` +
+  `|f_(?:${_AML_PATTERNS})` +
+  `|${_AML_PATTERNS})`,
+  "gi",
+);
+
+function _renderSummaryTokens(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  _SUMMARY_TOKEN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = _SUMMARY_TOKEN_RE.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (/^chunks?/i.test(tok)) {
+      parts.push(
+        <span key={m.index} className="rounded bg-surface-container-high px-1 font-mono text-[10.5px] text-on-surface-variant">
+          {tok}
+        </span>,
+      );
+    } else if (tok.startsWith("(")) {
+      parts.push(
+        <span key={m.index} className="font-mono text-[11px] text-on-surface-variant/70">
+          {tok}
+        </span>,
+      );
+    } else {
+      // AML pattern name or f_pattern reference
+      parts.push(
+        <code key={m.index} className={`rounded px-1 font-mono text-[11px] ${_patternChipClass(tok)}`}>
+          {tok}
+        </code>,
+      );
+    }
+    last = m.index + tok.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+function _splitSentences(text: string): string[] {
+  // Split at ". [Capital]" and "; [Capital]" — both are natural clause
+  // boundaries in the agent's legal-prose style.
+  const out: string[] = [];
+  const re = /(?:\.|\;) (?=[A-Z])/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const chunk = text.slice(last, m.index + 1).trim(); // keep the period/semicolon
+    if (chunk) out.push(chunk);
+    last = m.index + 2;
+  }
+  const tail = text.slice(last).trim();
+  if (tail) out.push(tail);
+  return out;
+}
+
+// Patterns that contribute ≥0.30 to risk score — rendered in red everywhere.
+const _HIGH_WEIGHT_PATTERNS = new Set([
+  "bearer_obscured_ownership",
+  "intermediary_shell_network",
+]);
+
+function _patternChipClass(name: string): string {
+  return _HIGH_WEIGHT_PATTERNS.has(name.toLowerCase())
+    ? "bg-error-container/50 text-on-error-container"
+    : "bg-secondary-fixed/25 text-on-secondary-fixed-variant";
+}
+
+function _extractPatterns(text: string): string[] {
+  const re = new RegExp(`\\b(${_AML_PATTERNS})\\b`, "gi");
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) seen.add(m[1].toLowerCase());
+  return Array.from(seen);
+}
+
+function SummaryBlock({ text }: { text: string }) {
+  // Separate the trailing "Follow-up: …" note from the main prose.
+  const followUpMatch = text.match(/\.\s*(Follow-up:.+)$/is);
+  const mainText = followUpMatch
+    ? text.slice(0, text.length - followUpMatch[1].length).trim()
+    : text;
+  const followUpText = followUpMatch
+    ? followUpMatch[1].replace(/^Follow-up:\s*/i, "").trim()
+    : null;
+
+  const patterns = useMemo(() => _extractPatterns(mainText), [mainText]);
+  const sentences = useMemo(() => _splitSentences(mainText), [mainText]);
+
+  return (
+    <div className="mb-3 space-y-2">
+      {/* Pattern chips — at-a-glance risk signals */}
+      {patterns.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {patterns.map((p) => (
+            <span
+              key={p}
+              className={`rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-semibold ${_patternChipClass(p)}`}
+            >
+              {p}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Prose — compact clauses, one per row */}
+      <div className="space-y-1">
+        {sentences.map((s, i) => (
+          <p key={i} className="text-[11.5px] leading-relaxed text-on-surface-variant">
+            {_renderSummaryTokens(s)}
+          </p>
+        ))}
+      </div>
+
+      {/* Follow-up badge */}
+      {followUpText && (
+        <div className="flex items-start gap-2 rounded border border-outline-variant/30 bg-surface-container-low px-2.5 py-2">
+          <span className="mt-0.5 shrink-0 rounded-sm bg-surface-container-high px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-on-surface-variant">
+            Follow-up
+          </span>
+          <p className="text-[11px] italic leading-relaxed text-on-surface-variant/80">
+            {_renderSummaryTokens(followUpText)}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Render inline markdown — bold, inline code — without a heavy dependency. */
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith("`") && part.endsWith("`")) {
+          return (
+            <code key={i} className="rounded bg-surface-container-high px-1 font-mono text-[11px] text-on-surface">
+              {part.slice(1, -1)}
+            </code>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
 
 const VERDICT_META: Record<
   Verdict,
@@ -155,14 +339,10 @@ const VERIFY_MSG_INTERVAL_MS = 900;
 const PIPELINE_MSG_MS = 700;
 const PIPELINE_STAGE_BUFFER_MS = 400;
 
-const DEEP_PHASES = [
-  "Resolving entity from question…",
-  "Traversing 2-hop entity subgraph…",
-  "Detecting graph anomaly patterns…",
-  "Retrieving MAS Notice 626 typology chunks…",
-  "Reasoning over evidence…",
-];
-const DEEP_PHASE_INTERVAL_MS = 6000;
+// Total number of phases the backend reports — synced with src/api/jobs.py
+// DEEP_PHASES. Used only for the "step N of M" label; the active phase label
+// itself comes from the backend so changes there don't require a frontend edit.
+const DEEP_TOTAL_PHASES = 5;
 
 export default function VerdictBanner({
   verdict,
@@ -179,8 +359,11 @@ export default function VerdictBanner({
   onHandoff,
   onSarFiled,
   onDeepAnalyze,
+  onStopWatchingDeep,
   deepAnalyzing = false,
   deepAnalysisDone = false,
+  deepStatus = null,
+  deepError = null,
 }: {
   verdict: Verdict;
   riskScore: number;
@@ -196,8 +379,11 @@ export default function VerdictBanner({
   onHandoff: () => void;
   onSarFiled: () => void;
   onDeepAnalyze?: () => void;
+  onStopWatchingDeep?: () => void;
   deepAnalyzing?: boolean;
   deepAnalysisDone?: boolean;
+  deepStatus?: DeepStatus | null;
+  deepError?: string | null;
 }) {
   const meta = VERDICT_META[verdict];
   const maxTx = Math.max(...txVelocity, 1);
@@ -237,25 +423,14 @@ export default function VerdictBanner({
   );
   const [thoughtMsg, setThoughtMsg] = useState<Record<string, string>>({});
 
-  const [deepPhaseIdx, setDeepPhaseIdx] = useState(0);
-  const [deepElapsed, setDeepElapsed] = useState(0);
-  useEffect(() => {
-    if (!deepAnalyzing) {
-      setDeepPhaseIdx(0);
-      setDeepElapsed(0);
-      return;
-    }
-    setDeepPhaseIdx(0);
-    setDeepElapsed(0);
-    const phaseTimer = setInterval(() => {
-      setDeepPhaseIdx((i) => Math.min(i + 1, DEEP_PHASES.length - 1));
-    }, DEEP_PHASE_INTERVAL_MS);
-    const elapsedTimer = setInterval(() => setDeepElapsed((s) => s + 1), 1000);
-    return () => {
-      clearInterval(phaseTimer);
-      clearInterval(elapsedTimer);
-    };
-  }, [deepAnalyzing]);
+  const [deepErrorOpen, setDeepErrorOpen] = useState(false);
+  const deepPhaseIdx = deepStatus?.phase_idx ?? 0;
+  const deepPhaseLabel = deepStatus?.phase_label ?? "Starting agent…";
+  const deepElapsed = deepStatus?.elapsed_seconds ?? 0;
+  const deepTokens =
+    deepStatus && (deepStatus.input_tokens != null || deepStatus.output_tokens != null)
+      ? (deepStatus.input_tokens ?? 0) + (deepStatus.output_tokens ?? 0)
+      : null;
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -374,10 +549,21 @@ export default function VerdictBanner({
                 type="button"
                 onClick={onDeepAnalyze}
                 className="flex h-7 items-center gap-1.5 rounded-sm border border-primary/30 bg-primary-fixed/30 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-on-primary-fixed-variant transition-colors hover:bg-primary-fixed/50"
-                title="Run the full H2OGPTe agent loop (30-90s)"
+                title="Run the full H2OGPTe agent loop (5–10 minutes)"
               >
                 <Sparkles size={12} strokeWidth={2.5} />
                 Run Deep Analysis
+              </button>
+            )}
+            {deepAnalyzing && onStopWatchingDeep && (
+              <button
+                type="button"
+                onClick={onStopWatchingDeep}
+                className="flex h-7 items-center gap-1.5 rounded-sm border border-outline-variant/50 bg-surface-container-low px-2.5 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                title="The H2OGPTe agent run continues and still bills on the server. This just stops the UI from waiting."
+              >
+                <XCircle size={12} strokeWidth={2.5} />
+                Stop Watching
               </button>
             )}
             {deepAnalysisDone && (
@@ -389,24 +575,76 @@ export default function VerdictBanner({
           </div>
           <p className="mb-2 text-base font-medium leading-relaxed text-[#191c1d]">{headline}</p>
           {deepAnalyzing && (
-            <div className="mb-3 flex items-center gap-3 rounded border border-primary/30 bg-primary-fixed/20 px-3 py-2">
-              <Loader2 size={14} strokeWidth={2.25} className="shrink-0 animate-spin text-primary" />
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-on-primary-fixed-variant">
-                  H2OGPTe agent · step {Math.min(deepPhaseIdx + 1, DEEP_PHASES.length)} of {DEEP_PHASES.length}
+            <div className="mb-3 rounded border border-primary/30 bg-primary-fixed/20 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <Loader2 size={14} strokeWidth={2.25} className="shrink-0 animate-spin text-primary" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-on-primary-fixed-variant">
+                    H2OGPTe agent · step {Math.min(deepPhaseIdx + 1, DEEP_TOTAL_PHASES)} of {DEEP_TOTAL_PHASES}
+                  </div>
+                  <div className="truncate text-[12.5px] italic text-on-surface">
+                    {deepPhaseLabel}
+                  </div>
                 </div>
-                <div className="truncate text-[12.5px] italic text-on-surface">
-                  {DEEP_PHASES[deepPhaseIdx]}
-                </div>
+                <span className="shrink-0 font-mono text-[11px] tabular-nums text-on-surface-variant">
+                  {deepElapsed}s
+                </span>
               </div>
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-on-surface-variant">
-                {deepElapsed}s
-              </span>
+              {deepTokens != null && (
+                <div className="mt-1.5 ml-7 font-mono text-[10.5px] tabular-nums text-on-surface-variant">
+                  ~{deepTokens.toLocaleString()} tokens · live from H2OGPTe
+                </div>
+              )}
             </div>
           )}
-          {summary && (
-            <p className="mb-3 text-[13px] leading-relaxed text-on-surface-variant">{summary}</p>
-          )}
+          {deepError && (() => {
+            // If the agent emitted at least one turn before failing, treat it
+            // as a partial completion (yellow). Otherwise it's a total failure
+            // (red). Either way the long SDK error string is collapsed behind
+            // a "Details" toggle so it doesn't flood the page.
+            const partial = (deepStatus?.agent_events?.length ?? 0) > 0;
+            const phaseIdx = deepStatus?.phase_idx ?? 0;
+            // Honest step count: phase_idx is 0..4 where 0 = setup (pre-step-1)
+            // and 1..3 = steps 1..3; phase 4 = synthesis. Only show "reached
+            // step N" if we actually got past setup.
+            const stepReachedLabel = phaseIdx >= 1 ? ` (reached step ${phaseIdx} of 3)` : "";
+            return (
+              <div
+                className={
+                  partial
+                    ? "mb-3 rounded border border-secondary/40 bg-secondary-fixed/20 px-3 py-2 text-[12px] text-on-secondary-fixed-variant"
+                    : "mb-3 rounded border border-error/40 bg-error-container/40 px-3 py-2 text-[12px] text-on-error-container"
+                }
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={14} strokeWidth={2.25} className="mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold uppercase tracking-wider text-[10.5px]">
+                      {partial ? `Deep analysis stopped early${stepReachedLabel}` : "Deep analysis failed"}
+                    </div>
+                    {partial && (
+                      <div className="mt-0.5 text-[11.5px] opacity-90">
+                        Verdict above reflects the deterministic baseline. Steps completed before the timeout are below in Agent Reasoning.
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeepErrorOpen((v) => !v)}
+                    className="shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider opacity-80 hover:opacity-100"
+                  >
+                    {deepErrorOpen ? "Hide details" : "Details"}
+                  </button>
+                </div>
+                {deepErrorOpen && (
+                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-container-lowest p-2 font-mono text-[10.5px] leading-snug text-on-surface-variant">
+                    {deepError}
+                  </pre>
+                )}
+              </div>
+            );
+          })()}
+          {summary && <SummaryBlock text={summary} />}
           {recommendedActions && recommendedActions.length > 0 && (
             <div className="mb-4 rounded border border-surface-container-high bg-surface-container-low p-3">
               <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-on-surface-variant">
@@ -416,7 +654,7 @@ export default function VerdictBanner({
                 {recommendedActions.map((a, i) => (
                   <li key={i} className="flex gap-2">
                     <span className="mt-1 inline-block h-1 w-1 shrink-0 rounded-full bg-primary" />
-                    <span>{a}</span>
+                    <span><InlineMarkdown text={a} /></span>
                   </li>
                 ))}
               </ul>
