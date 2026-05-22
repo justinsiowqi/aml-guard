@@ -21,7 +21,6 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import Sparkline from "./Sparkline";
 
 // ─── SummaryBlock ────────────────────────────────────────────────────────────
 // Renders the deep-agent SUMMARY paragraph with inline entity / pattern / chunk
@@ -350,7 +349,6 @@ export default function VerdictBanner({
   headline,
   summary,
   recommendedActions,
-  txVelocity,
   riskDecomposition,
   findings,
   typologyChunks,
@@ -386,7 +384,6 @@ export default function VerdictBanner({
   deepError?: string | null;
 }) {
   const meta = VERDICT_META[verdict];
-  const maxTx = Math.max(...txVelocity, 1);
   const maxDecomp = Math.max(...riskDecomposition.map((d) => d.value), 0.01);
 
   // For verification items 3 and 4 the outcome string is sourced from real
@@ -432,48 +429,39 @@ export default function VerdictBanner({
       ? (deepStatus.input_tokens ?? 0) + (deepStatus.output_tokens ?? 0)
       : null;
 
-  useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    const phases = new Map<number, ChecklistItem[]>();
-    VERIFICATION_PROTOCOL.forEach((item) => {
-      const arr = phases.get(item.phase) ?? [];
-      arr.push(item);
-      phases.set(item.phase, arr);
-    });
+  // Verification only runs when deep analysis is active — items sit idle
+  // (pending grey circles) until the user clicks "Run Deep Analysis".
 
-    let t = 0;
-    Array.from(phases.entries())
-      .sort(([a], [b]) => a - b)
-      .forEach(([, items]) => {
-        let phaseMax = 0;
-        items.forEach((item) => {
-          const duration = item.thoughts.length * VERIFY_MSG_INTERVAL_MS;
-          phaseMax = Math.max(phaseMax, duration);
-          const startAt = t;
-          timers.push(
-            setTimeout(() => {
-              setStatuses((s) => ({ ...s, [item.id]: "verifying" }));
-              setThoughtMsg((m) => ({ ...m, [item.id]: item.thoughts[0] }));
-            }, startAt),
-          );
-          item.thoughts.forEach((msg, mIdx) => {
-            if (mIdx === 0) return;
-            timers.push(
-              setTimeout(() => {
-                setThoughtMsg((m) => ({ ...m, [item.id]: msg }));
-              }, startAt + mIdx * VERIFY_MSG_INTERVAL_MS),
-            );
-          });
-          timers.push(
-            setTimeout(() => {
-              setStatuses((s) => ({ ...s, [item.id]: "verified" }));
-            }, startAt + duration),
-          );
-        });
-        t += phaseMax;
+  // Deep-analysis path: drive checklist from the agent's live phase index.
+  // Mapping: deep phase → which verification items are verifying / verified.
+  //   Phase 0 (resolving)   → all pending
+  //   Phase 1 (traversing)  → sanctions verifying
+  //   Phase 2 (anomalies)   → sanctions verified; funds + typology verifying
+  //   Phase 3 (typology)    → funds + typology verified; narrative verifying
+  //   Phase 4+ / done       → all verified
+  useEffect(() => {
+    if (!deepAnalyzing && !deepAnalysisDone) return;
+    const idx = deepAnalysisDone ? 99 : (deepPhaseIdx ?? 0);
+    const next: Record<string, ChecklistStatus> = {
+      sanctions: idx >= 1 ? (idx >= 2 ? "verified" : "verifying") : "pending",
+      funds:     idx >= 2 ? (idx >= 3 ? "verified" : "verifying") : "pending",
+      typology:  idx >= 2 ? (idx >= 3 ? "verified" : "verifying") : "pending",
+      narrative: idx >= 3 ? (idx >= 4 ? "verified" : "verifying") : "pending",
+    };
+    setStatuses(next);
+    // Cycle thought messages for newly-verifying items.
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    VERIFICATION_PROTOCOL.forEach((item) => {
+      if (next[item.id] !== "verifying") return;
+      setThoughtMsg((m) => ({ ...m, [item.id]: item.thoughts[0] }));
+      item.thoughts.slice(1).forEach((msg, i) => {
+        timers.push(setTimeout(() => {
+          setThoughtMsg((m) => ({ ...m, [item.id]: msg }));
+        }, (i + 1) * VERIFY_MSG_INTERVAL_MS));
       });
+    });
     return () => timers.forEach(clearTimeout);
-  }, []);
+  }, [deepPhaseIdx, deepAnalyzing, deepAnalysisDone]);
 
   const total = VERIFICATION_PROTOCOL.length;
   const done = Object.values(statuses).filter((s) => s === "verified").length;
@@ -644,7 +632,12 @@ export default function VerdictBanner({
               </div>
             );
           })()}
-          {summary && <SummaryBlock text={summary} />}
+          {deepAnalysisDone && summary && <SummaryBlock text={summary} />}
+          {!deepAnalyzing && !deepAnalysisDone && onDeepAnalyze && (
+            <p className="mb-3 text-[11.5px] text-on-surface-variant/50 italic">
+              Run deep analysis for full evidence narrative and agent verification.
+            </p>
+          )}
           {recommendedActions && recommendedActions.length > 0 && (
             <div className="mb-4 rounded border border-surface-container-high bg-surface-container-low p-3">
               <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-on-surface-variant">
@@ -661,39 +654,39 @@ export default function VerdictBanner({
             </div>
           )}
 
-          <div className="grid grid-cols-12 gap-6 border-t border-surface-container-high pt-4">
-            <div className="col-span-12 lg:col-span-7">
-              <div className="mb-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+          <div className="border-t border-surface-container-high pt-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                 Risk Decomposition
-              </div>
-              <div className="space-y-1.5">
-                {riskDecomposition.map((d) => (
-                  <div key={d.label} className="flex items-center gap-3 text-xs">
-                    <span className="w-24 shrink-0 text-on-surface-variant">{d.label}</span>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-container-high">
-                      <div
-                        className={`h-full rounded-full ${BAR_TONE[meta.tone]}`}
-                        style={{ width: `${(d.value / maxDecomp) * 100}%` }}
-                      />
-                    </div>
-                    <span className="w-10 shrink-0 text-right font-mono tabular-nums text-on-surface">
-                      {d.value.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              </span>
+              {deepAnalysisDone && (
+                <span className="flex items-center gap-1 rounded-sm bg-primary-fixed/40 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-on-primary-fixed-variant">
+                  <Sparkles size={9} strokeWidth={2.5} />
+                  Agent score · {riskScore.toFixed(2)}
+                </span>
+              )}
+              {deepAnalyzing && (
+                <span className="flex items-center gap-1 text-[10px] text-on-surface-variant/60 italic">
+                  <Loader2 size={10} strokeWidth={2} className="animate-spin" />
+                  validating…
+                </span>
+              )}
             </div>
-
-            <div className="col-span-12 lg:col-span-5">
-              <div className="mb-2 flex items-baseline justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
-                  Velocity · 12 periods
-                </span>
-                <span className="font-mono text-[11px] text-on-surface-variant">
-                  Max {maxTx.toLocaleString()}
-                </span>
-              </div>
-              <Sparkline data={txVelocity} tone={meta.tone} width={280} height={32} />
+            <div className="space-y-1.5">
+              {riskDecomposition.map((d) => (
+                <div key={d.label} className="flex items-center gap-3 text-xs">
+                  <span className="w-24 shrink-0 text-on-surface-variant">{d.label}</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-container-high">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${BAR_TONE[meta.tone]}${deepAnalyzing ? " opacity-60" : ""}`}
+                      style={{ width: `${(d.value / maxDecomp) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-10 shrink-0 text-right font-mono tabular-nums text-on-surface">
+                    {d.value.toFixed(2)}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -702,9 +695,21 @@ export default function VerdictBanner({
               <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                 <ShieldCheck size={14} strokeWidth={2} className="text-primary" />
                 Verification Protocol
-                <span className="ml-1 rounded-sm bg-surface-container-high px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wider text-on-surface-variant">
-                  AGENT-RUN
-                </span>
+                {deepAnalyzing ? (
+                  <span className="ml-1 flex items-center gap-1 rounded-sm bg-primary-fixed/30 px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wider text-on-primary-fixed-variant">
+                    <Loader2 size={9} strokeWidth={2.5} className="animate-spin" />
+                    {deepPhaseLabel}
+                  </span>
+                ) : deepAnalysisDone ? (
+                  <span className="ml-1 flex items-center gap-1 rounded-sm bg-primary-fixed/40 px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wider text-on-primary-fixed-variant">
+                    <Sparkles size={9} strokeWidth={2.5} />
+                    Agent-verified
+                  </span>
+                ) : (
+                  <span className="ml-1 rounded-sm bg-surface-container-high px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wider text-on-surface-variant/50">
+                    Pending deep analysis
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-2">
                 <div className="h-1 w-24 overflow-hidden rounded-full bg-surface-container-high">
