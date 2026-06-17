@@ -12,6 +12,8 @@ import logging
 import re
 from typing import Any, Callable
 
+from h2ogpte_observability import traced_query
+
 from src.core.client import create_client
 from src.core.config import get_agent_config
 from src.core.setup import (
@@ -253,8 +255,9 @@ class AMLAgent:
         sdk_timeout = max(600, int(self._config.get("agent_total_timeout") or 0) + 60)
 
         with self._client.connect(chat_session_id) as session:
-            reply = session.query(
-                message=user_message,
+            reply = traced_query(
+                session,
+                user_message,
                 system_prompt=_SYSTEM_PROMPT,
                 llm=self._config.get("llm"),
                 llm_args=dict(

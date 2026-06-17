@@ -12,11 +12,68 @@ import base64
 import json
 import logging
 import os
+import re
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Dedicated logger for the Cypher audit trail. Emits a one-line summary to the
+# console (visible in the uvicorn terminal) and appends a structured JSONL
+# record to a file for reproducibility / customer-facing "these are real
+# Neo4j queries" evidence. Toggle with AML_CYPHER_AUDIT (default on); change
+# the output path with AML_CYPHER_AUDIT_FILE (default logs/cypher_audit.jsonl).
+_CYPHER_LOGGER = logging.getLogger("aml.cypher")
+
+# Trivial connectivity probes we don't want cluttering the audit trail.
+_AUDIT_SKIP = {"RETURN 1 AS ping", "RETURN 1 AS ok"}
+
+
+def _inline_cypher(cypher: str, params: dict[str, Any] | None) -> str:
+    """Return a copy-pasteable Cypher string with $params substituted by their
+    literal values. For display / reproducibility only — the app always executes
+    the parameterised form. json.dumps yields valid Cypher literals for strings
+    (double-quoted), numbers, booleans, null, and lists.
+    """
+    if not params:
+        return " ".join(cypher.split())
+    out = " ".join(cypher.split())
+    # Replace longer keys first so $entity_id isn't clipped by $entity.
+    for key in sorted(params, key=len, reverse=True):
+        literal = json.dumps(params[key], ensure_ascii=False, default=str)
+        out = re.sub(rf"\${re.escape(key)}(?![A-Za-z0-9_])", lambda _m: literal, out)
+    return out
+
+
+def _audit_query(
+    cypher: str, params: dict[str, Any] | None, rows: int, elapsed_ms: float
+) -> None:
+    """Append one query to the audit trail. Never raises — auditing must not
+    affect query results."""
+    if os.getenv("AML_CYPHER_AUDIT", "1") != "1":
+        return
+    if " ".join(cypher.split()) in _AUDIT_SKIP:
+        return
+    try:
+        reproducible = _inline_cypher(cypher, params)
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "elapsed_ms": round(elapsed_ms, 1),
+            "rows": rows,
+            "cypher": " ".join(cypher.split()),
+            "params": params or {},
+            "reproducible": reproducible,
+        }
+        path = os.getenv("AML_CYPHER_AUDIT_FILE") or os.path.join("logs", "cypher_audit.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        _CYPHER_LOGGER.info("[cypher] rows=%s %.0fms :: %s", rows, elapsed_ms, reproducible)
+    except Exception as e:
+        logger.debug("Cypher audit failed (non-fatal): %s", e)
 
 
 class Neo4jConnection:
@@ -121,6 +178,7 @@ class Neo4jConnection:
             method="POST",
         )
 
+        started = time.perf_counter()
         for attempt in range(2):
             try:
                 with urllib.request.urlopen(req, timeout=self._timeout) as resp:
@@ -146,7 +204,9 @@ class Neo4jConnection:
         data = body.get("data", {}) or {}
         fields = data.get("fields", []) or []
         values = data.get("values", []) or []
-        return [dict(zip(fields, row)) for row in values]
+        rows = [dict(zip(fields, row)) for row in values]
+        _audit_query(cypher, params, len(rows), (time.perf_counter() - started) * 1000)
+        return rows
 
     # ------------------------------------------------------------------
     # Context manager

@@ -1,5 +1,6 @@
 # Core AI & Graph
 h2ogpte==1.6.60
+h2ogpte-observability @ git+https://github.com/justinsiowqi/h2ogpte-observability.git
 python-dotenv>=1.0.0
 
 # Data loading

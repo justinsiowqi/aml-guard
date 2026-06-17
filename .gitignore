@@ -7,3 +7,4 @@ __pycache__/
 .vscode/
 data/layer_2/regulatory_documents/*.pdf
 src/mcp/*.zip
+logs/

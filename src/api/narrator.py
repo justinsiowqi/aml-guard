@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
 
+from h2ogpte_observability import traced_query
+
 from src.core.client import create_client
 from src.core.config import get_agent_config
 from src.core.prompt_loader import load_message, load_prompt
@@ -112,8 +114,9 @@ def _call_narrator(case: dict[str, Any]) -> dict[str, Any]:
 
     chat_id = client.create_chat_session(_get_narrative_collection(client))
     with client.connect(chat_id) as session:
-        reply = session.query(
-            message=user_msg,
+        reply = traced_query(
+            session,
+            user_msg,
             system_prompt=sys_prompt,
             llm=cfg["llm"],
             llm_args={"temperature": cfg.get("temperature", 0.2)},

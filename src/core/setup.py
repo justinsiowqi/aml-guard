@@ -4,6 +4,7 @@ import os
 import time
 
 from h2ogpte import H2OGPTE
+from h2ogpte_observability import traced_upload, traced_ingest_uploads
 
 BASE_DIR = os.path.dirname(__file__)
 SERVER_FILENAME = 'aml_guard_mcp.zip'
@@ -30,11 +31,12 @@ def create_chat(client: H2OGPTE, collection_id: str) -> str:
 def upload_and_ingest_mcp(client: H2OGPTE, collection_id: str) -> str:
     """Upload and ingest the MCP server file into the collection."""
     with open(SERVER_FILE, 'rb') as f:
-        upload_id = client.upload(SERVER_FILENAME, f)
+        upload_id = traced_upload(client, SERVER_FILENAME, f)
 
-    ingest_job = client.ingest_uploads(
-        collection_id=collection_id,
-        upload_ids=[upload_id],
+    ingest_job = traced_ingest_uploads(
+        client,
+        collection_id,
+        [upload_id],
         ingest_mode="agent_only",
     )
 
