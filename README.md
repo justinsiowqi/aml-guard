@@ -141,7 +141,12 @@ python scripts/load_layer1_entities.py --reset
 
 - Place FATF/AUSTRAC PDFs in `data/layer_2/regulatory_documents/`
 - Register them in `data/layer_2/document_config.yaml`
-- Run notebooks 211 → 215 in order
+
+```bash
+python scripts/ingest_layer2.py --reset
+python scripts/embed_chunks.py 
+python scripts/validate_layer2.py
+```
 
 **5. Verify tools**
 
