@@ -2,8 +2,15 @@ agents:
   aml:
     llm: "claude-sonnet-4-6"
     temperature: 0.5
-    agent_accuracy: "standard"
-    agent_max_turns: 20
+    # "quick" = lowest agent reasoning depth + tool-output re-reading
+    # (valid: quick<basic<standard<maximum). Chosen for demo speed; trades
+    # some verdict-reasoning quality. Step up to "basic" if quality slips.
+    agent_accuracy: "quick"
+    # Design expects 0 follow-up tool calls in the common case (the trunk
+    # already ran the 3 baseline tools). 3 turns leaves room for the 1-3
+    # legit gap-fill calls in aml_sys.md and HARD-CAPS the runaway loop that
+    # fired 134 cypher queries in one run. Was 20.
+    agent_max_turns: 3
     agent_type: "general"
     # Both timeouts are in SECONDS per H2OGPTe SDK docs. Defaults are 3600s
     # (1h). Sized to give the full 3-step workflow (traverse + detect +

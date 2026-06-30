@@ -103,6 +103,38 @@ function _splitSentences(text: string): string[] {
   return out;
 }
 
+// Truncate at a word boundary, appending an ellipsis if the text was cut.
+// Keeps the headline to one tidy line instead of the backend's hard 140-char
+// mid-word slice (see src/api/merge.py).
+function _clampWords(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  const base = lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return base.replace(/[\s,;:.–—-]+$/, "") + "…";
+}
+
+// In deep mode the backend hands us a headline already sliced to 140 chars,
+// often mid-word. When the full summary is present we re-derive a clean first
+// sentence from it and clamp at a word boundary instead.
+function _cleanHeadline(headline: string, summary?: string): string {
+  if (summary && summary.trim()) {
+    const first = _splitSentences(summary)[0] ?? summary;
+    return _clampWords(first, 150);
+  }
+  return headline;
+}
+
+// Drop the occasional leaked summary paragraph (a single "action" hundreds of
+// chars long), trim blanks, and cap the list for a clean demo.
+function _cleanActions(actions: string[]): string[] {
+  return actions
+    .map((a) => a.trim())
+    .filter((a) => a.length > 0 && a.length <= 280)
+    .slice(0, 4);
+}
+
 // Patterns that contribute ≥0.30 to risk score — rendered in red everywhere.
 const _HIGH_WEIGHT_PATTERNS = new Set([
   "bearer_obscured_ownership",
@@ -124,17 +156,19 @@ function _extractPatterns(text: string): string[] {
 }
 
 function SummaryBlock({ text }: { text: string }) {
-  // Separate the trailing "Follow-up: …" note from the main prose.
+  // Drop the trailing internal "Follow-up: …" note — it's the agent's own
+  // tool-call justification, noise for a demo audience.
   const followUpMatch = text.match(/\.\s*(Follow-up:.+)$/is);
   const mainText = followUpMatch
     ? text.slice(0, text.length - followUpMatch[1].length).trim()
     : text;
-  const followUpText = followUpMatch
-    ? followUpMatch[1].replace(/^Follow-up:\s*/i, "").trim()
-    : null;
 
   const patterns = useMemo(() => _extractPatterns(mainText), [mainText]);
-  const sentences = useMemo(() => _splitSentences(mainText), [mainText]);
+  // Keep it tight: chips + the first two sentences as a single paragraph.
+  const condensed = useMemo(
+    () => _splitSentences(mainText).slice(0, 2).join(" "),
+    [mainText],
+  );
 
   return (
     <div className="mb-3 space-y-2">
@@ -152,26 +186,10 @@ function SummaryBlock({ text }: { text: string }) {
         </div>
       )}
 
-      {/* Prose — compact clauses, one per row */}
-      <div className="space-y-1">
-        {sentences.map((s, i) => (
-          <p key={i} className="text-[11.5px] leading-relaxed text-on-surface-variant">
-            {_renderSummaryTokens(s)}
-          </p>
-        ))}
-      </div>
-
-      {/* Follow-up badge */}
-      {followUpText && (
-        <div className="flex items-start gap-2 rounded border border-outline-variant/30 bg-surface-container-low px-2.5 py-2">
-          <span className="mt-0.5 shrink-0 rounded-sm bg-surface-container-high px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-on-surface-variant">
-            Follow-up
-          </span>
-          <p className="text-[11px] italic leading-relaxed text-on-surface-variant/80">
-            {_renderSummaryTokens(followUpText)}
-          </p>
-        </div>
-      )}
+      {/* Prose — one compact paragraph */}
+      <p className="text-[11.5px] leading-relaxed text-on-surface-variant">
+        {_renderSummaryTokens(condensed)}
+      </p>
     </div>
   );
 }
@@ -192,7 +210,8 @@ function InlineMarkdown({ text }: { text: string }) {
             </code>
           );
         }
-        return <span key={i}>{part}</span>;
+        // Strip stray/unbalanced asterisks the agent leaves in prose.
+        return <span key={i}>{part.replace(/\*+/g, "")}</span>;
       })}
     </>
   );
@@ -385,6 +404,8 @@ export default function VerdictBanner({
 }) {
   const meta = VERDICT_META[verdict];
   const maxDecomp = Math.max(...riskDecomposition.map((d) => d.value), 0.01);
+  const cleanHeadline = _cleanHeadline(headline, summary);
+  const actions = _cleanActions(recommendedActions ?? []);
 
   // For verification items 3 and 4 the outcome string is sourced from real
   // assessment data; items 1 and 2 fall back to honest static stubs since
@@ -561,7 +582,9 @@ export default function VerdictBanner({
               </span>
             )}
           </div>
-          <p className="mb-2 text-base font-medium leading-relaxed text-[#191c1d]">{headline}</p>
+          <p className="mb-2 line-clamp-2 text-base font-medium leading-relaxed text-[#191c1d]">
+            {cleanHeadline}
+          </p>
           {deepAnalyzing && (
             <div className="mb-3 rounded border border-primary/30 bg-primary-fixed/20 px-3 py-2">
               <div className="flex items-center gap-3">
@@ -638,13 +661,13 @@ export default function VerdictBanner({
               Run deep analysis for full evidence narrative and agent verification.
             </p>
           )}
-          {recommendedActions && recommendedActions.length > 0 && (
+          {actions.length > 0 && (
             <div className="mb-4 rounded border border-surface-container-high bg-surface-container-low p-3">
               <div className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-on-surface-variant">
                 Recommended actions
               </div>
               <ul className="space-y-1 text-[12.5px] leading-snug text-on-surface">
-                {recommendedActions.map((a, i) => (
+                {actions.map((a, i) => (
                   <li key={i} className="flex gap-2">
                     <span className="mt-1 inline-block h-1 w-1 shrink-0 rounded-full bg-primary" />
                     <span><InlineMarkdown text={a} /></span>
