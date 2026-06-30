@@ -1,145 +1,707 @@
-import type { CaseAssessment, SubgraphNode } from "@/lib/types";
+"use client";
+
+import { useMemo, useState } from "react";
+import { Share2, X } from "lucide-react";
+import type { CaseAssessment, ConnectionFocus, SubgraphNode } from "@/lib/types";
+
+type Pos = { x: number; y: number };
+type NodeShape = "circle" | "rect" | "rect-dashed" | "pill" | "diamond";
+
+function pickSeed(
+  nodes: SubgraphNode[],
+  edges: { source: string; target: string }[],
+): SubgraphNode {
+  const degree = new Map<string, number>();
+  for (const e of edges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  return nodes.slice().sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))[0];
+}
+
+function spreadHoriz(
+  nodes: SubgraphNode[],
+  positions: Record<string, Pos>,
+  width: number,
+  y: number,
+): void {
+  if (nodes.length === 0) return;
+  if (nodes.length === 1) {
+    positions[nodes[0].id] = { x: width / 2, y };
+    return;
+  }
+  const margin = width * 0.08;
+  const available = width - 2 * margin;
+  const step = available / (nodes.length - 1);
+  nodes.forEach((n, i) => {
+    positions[n.id] = { x: margin + i * step, y };
+  });
+}
 
 /**
- * Hand-laid positions, keyed by node id in mocks/nielsen-enterprises.json.
- * Intentional layout: Jonathan Lim (top-left subject), three BVI shells in
- * a vertical stack middle, Mossack Fonseca hub top-right, BVI jurisdiction
- * + BSI Geneva anchoring the bottom.
+ * Three-band hierarchical layout for AML investigation:
+ *   row 0 (top)    — Officers (Persons): who controls the seed
+ *   row 1 (middle) — Seed entity, with metadata badges; intermediary just below
+ *   row 2 (bottom) — 2-hop network: shells controlled by the same officers
+ *                    and/or set up by the same intermediary
+ *
+ * Reads top-down as "who → what → how", which matches the analyst's
+ * mental model better than a radial layout.
  */
-const POS: Record<string, { x: number; y: number }> = {
-  p_jonathan_lim: { x: 40,  y: 50 },
-  c_nielsen:      { x: 190, y: 40 },
-  c_nescoll:      { x: 190, y: 105 },
-  c_hangon:       { x: 190, y: 170 },
-  i_mossack:      { x: 340, y: 40 },
-  j_bvi:          { x: 340, y: 170 },
-  a_bsi_geneva:   { x: 40,  y: 170 },
-};
+function computeHierarchicalLayout(
+  nodes: SubgraphNode[],
+  edges: { source: string; target: string }[],
+  width: number,
+  height: number,
+): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  if (nodes.length === 0) return positions;
 
-const TYPE_SHAPE: Record<SubgraphNode["type"], "circle" | "rect" | "diamond"> = {
+  const seed = pickSeed(nodes, edges);
+
+  const oneHopIds = new Set<string>();
+  for (const e of edges) {
+    if (e.source === seed.id) oneHopIds.add(e.target);
+    else if (e.target === seed.id) oneHopIds.add(e.source);
+  }
+
+  const officersAndPeers: SubgraphNode[] = [];
+  const intermediaries: SubgraphNode[] = [];
+  for (const n of nodes) {
+    if (n.id === seed.id || !oneHopIds.has(n.id)) continue;
+    if (n.type === "Intermediary") intermediaries.push(n);
+    else officersAndPeers.push(n);
+  }
+  const twoHop = nodes.filter((n) => n.id !== seed.id && !oneHopIds.has(n.id));
+
+  const cx = width / 2;
+  const rowOfficers      = height * 0.16;
+  const rowSeed          = height * 0.42;
+  const rowIntermediary  = height * 0.62;
+  const rowTwoHop        = height * 0.86;
+
+  positions[seed.id] = { x: cx, y: rowSeed };
+  spreadHoriz(officersAndPeers, positions, width, rowOfficers);
+  spreadHoriz(intermediaries,    positions, width, rowIntermediary);
+  spreadHoriz(twoHop,            positions, width, rowTwoHop);
+
+  return positions;
+}
+
+const RECT_W = 110;
+const RECT_H = 38;
+const CIRCLE_R = 24;
+const DIAMOND_RX = 30;
+const DIAMOND_RY = 26;
+
+const TYPE_SHAPE: Record<SubgraphNode["type"], NodeShape> = {
   Person: "circle",
   Company: "rect",
-  Intermediary: "rect",
+  Intermediary: "rect-dashed",
   Jurisdiction: "diamond",
-  Address: "rect",
+  Address: "pill",
 };
 
 const RISK_COLOR = {
-  HIGH: { fill: "#fef2f2", stroke: "#991b1b", text: "#991b1b" },
-  MEDIUM: { fill: "#fffbeb", stroke: "#92400e", text: "#92400e" },
-  LOW: { fill: "#f0fdf4", stroke: "#166534", text: "#166534" },
-  NONE: { fill: "#fafafa", stroke: "#e5e5e5", text: "#171717" },
+  HIGH:   { fill: "#ffdad6", stroke: "#ba1a1a", text: "#93000a", note: "#7a1d1d" },
+  MEDIUM: { fill: "#ffdf9a", stroke: "#785a00", text: "#5a4300", note: "#6b4e00" },
+  LOW:    { fill: "#dde1ff", stroke: "#00288e", text: "#173bab", note: "#2e4dbe" },
+  NONE:   { fill: "#e1e3e4", stroke: "#757684", text: "#191c1d", note: "#444653" },
 };
 
-export default function EntitySubgraph({ subgraph }: { subgraph: CaseAssessment["subgraph"] }) {
-  const W = 420;
-  const H = 230;
+const EDGE_STYLE: Record<string, { stroke: string; dash?: string; label: string }> = {
+  RECEIVED_WIRE_FROM: { stroke: "#ba1a1a", dash: "5 3", label: "Received wire from" },
+  INTERMEDIARY_OF:    { stroke: "#785a00", label: "Intermediary of" },
+  INCORPORATED_IN:    { stroke: "#6f6f82", dash: "2 3", label: "Incorporated in" },
+  ROUTED_THROUGH:     { stroke: "#00639b", dash: "5 3", label: "Routed through" },
+};
+const EDGE_DEFAULT = { stroke: "#9aa0a6", label: "Related" };
 
+const SHAPE_LEGEND: { shape: NodeShape; label: string }[] = [
+  { shape: "circle",       label: "Person" },
+  { shape: "rect",         label: "Company" },
+  { shape: "rect-dashed",  label: "Intermediary" },
+  { shape: "pill",         label: "Address / Bank" },
+  { shape: "diamond",      label: "Jurisdiction" },
+];
+
+function isRectLike(shape: NodeShape): boolean {
+  return shape === "rect" || shape === "rect-dashed" || shape === "pill";
+}
+
+function nodeEdgePoint(center: Pos, toward: Pos, shape: NodeShape): Pos {
+  const dx = toward.x - center.x;
+  const dy = toward.y - center.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+
+  if (shape === "circle") {
+    return { x: center.x + ux * CIRCLE_R, y: center.y + uy * CIRCLE_R };
+  }
+  if (shape === "diamond") {
+    const t = 1 / (Math.abs(ux) / DIAMOND_RX + Math.abs(uy) / DIAMOND_RY);
+    return { x: center.x + ux * t, y: center.y + uy * t };
+  }
+  if (shape === "pill") {
+    const halfW = RECT_W / 2;
+    const halfH = RECT_H / 2;
+    const rx = halfH;
+    const coreW = halfW - rx;
+    if (uy !== 0) {
+      const t = halfH / Math.abs(uy);
+      if (Math.abs(ux * t) <= coreW) {
+        return { x: center.x + ux * t, y: center.y + uy * t };
+      }
+    }
+    const cx = (ux >= 0 ? 1 : -1) * coreW;
+    const b = -2 * cx * ux;
+    const c = cx * cx - rx * rx;
+    const disc = Math.max(0, b * b - 4 * c);
+    const t = (-b + Math.sqrt(disc)) / 2;
+    return { x: center.x + ux * t, y: center.y + uy * t };
+  }
+  // rect / rect-dashed
+  const halfW = RECT_W / 2;
+  const halfH = RECT_H / 2;
+  const tx = ux === 0 ? Infinity : halfW / Math.abs(ux);
+  const ty = uy === 0 ? Infinity : halfH / Math.abs(uy);
+  const t = Math.min(tx, ty);
+  return { x: center.x + ux * t, y: center.y + uy * t };
+}
+
+function renderNodeShape(shape: NodeShape, palette: typeof RISK_COLOR[keyof typeof RISK_COLOR]) {
+  if (shape === "circle") {
+    return <circle r={CIRCLE_R} fill={palette.fill} stroke={palette.stroke} strokeWidth={1.5} />;
+  }
+  if (shape === "diamond") {
+    return (
+      <polygon
+        points={`0,${-DIAMOND_RY} ${DIAMOND_RX},0 0,${DIAMOND_RY} ${-DIAMOND_RX},0`}
+        fill={palette.fill}
+        stroke={palette.stroke}
+        strokeWidth={1.5}
+      />
+    );
+  }
+  const rx = shape === "pill" ? RECT_H / 2 : 3;
+  const dash = shape === "rect-dashed" ? "5 3" : undefined;
   return (
-    <div>
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        <h3 className="font-display text-2xl text-text">Entity subgraph</h3>
-        <span className="tabular font-mono text-[12px] text-text-muted">
-          {subgraph.nodes.length} entities · {subgraph.edges.length} relations
-        </span>
-      </div>
-      <div className="rounded-md border border-border bg-surface p-3">
-        <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full">
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#737373" />
-            </marker>
-          </defs>
-
-          {subgraph.edges.map((e, i) => {
-            const a = POS[e.source];
-            const b = POS[e.target];
-            if (!a || !b) return null;
-            const midX = (a.x + b.x) / 2;
-            const midY = (a.y + b.y) / 2;
-            return (
-              <g key={i}>
-                <line
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke="#d4d4d4"
-                  strokeWidth={1}
-                  markerEnd="url(#arrow)"
-                />
-                <text
-                  x={midX}
-                  y={midY - 3}
-                  textAnchor="middle"
-                  className="font-mono"
-                  fontSize={8}
-                  fill="#737373"
-                >
-                  {e.kind.toLowerCase()}
-                </text>
-              </g>
-            );
-          })}
-
-          {subgraph.nodes.map((n) => {
-            const p = POS[n.id];
-            if (!p) return null;
-            const palette = RISK_COLOR[n.risk_tier ?? "NONE"];
-            const shape = TYPE_SHAPE[n.type];
-            return (
-              <g key={n.id} transform={`translate(${p.x}, ${p.y})`}>
-                {shape === "circle" && (
-                  <circle r={18} fill={palette.fill} stroke={palette.stroke} strokeWidth={1.5} />
-                )}
-                {shape === "rect" && (
-                  <rect x={-34} y={-14} width={68} height={28} rx={3} fill={palette.fill} stroke={palette.stroke} strokeWidth={1.5} />
-                )}
-                {shape === "diamond" && (
-                  <polygon points="0,-18 22,0 0,18 -22,0" fill={palette.fill} stroke={palette.stroke} strokeWidth={1.5} />
-                )}
-                <text
-                  y={shape === "rect" ? 0 : 35}
-                  textAnchor="middle"
-                  alignmentBaseline="middle"
-                  fontSize={shape === "rect" ? 8.5 : 9}
-                  fontWeight={500}
-                  fill={palette.text}
-                >
-                  {truncate(n.label, shape === "rect" ? 14 : 20)}
-                </text>
-                {n.note && shape !== "rect" && (
-                  <text
-                    y={shape === "circle" ? 48 : 48}
-                    textAnchor="middle"
-                    fontSize={7.5}
-                    fill="#737373"
-                  >
-                    {n.note}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-
-        <div className="mt-2 flex flex-wrap gap-3 border-t border-border pt-2 text-[10px] text-text-muted">
-          <LegendSwatch tone="HIGH" label="high risk" />
-          <LegendSwatch tone="MEDIUM" label="medium" />
-          <LegendSwatch tone="NONE" label="unrated" />
-        </div>
-      </div>
-    </div>
+    <rect
+      x={-RECT_W / 2}
+      y={-RECT_H / 2}
+      width={RECT_W}
+      height={RECT_H}
+      rx={rx}
+      fill={palette.fill}
+      stroke={palette.stroke}
+      strokeWidth={1.5}
+      strokeDasharray={dash}
+    />
   );
 }
 
-function LegendSwatch({ tone, label }: { tone: keyof typeof RISK_COLOR; label: string }) {
-  const p = RISK_COLOR[tone];
+function SelectionRing({ shape }: { shape: NodeShape }) {
+  const stroke = "#1e40af";
+  const strokeWidth = 2;
+  if (shape === "circle") {
+    return (
+      <circle
+        r={CIRCLE_R + 5}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+      />
+    );
+  }
+  if (shape === "diamond") {
+    const rx = DIAMOND_RX + 5;
+    const ry = DIAMOND_RY + 5;
+    return (
+      <polygon
+        points={`0,${-ry} ${rx},0 0,${ry} ${-rx},0`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+      />
+    );
+  }
+  const rx = shape === "pill" ? RECT_H / 2 + 5 : 5;
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: p.fill, border: `1px solid ${p.stroke}` }} />
-      {label}
-    </span>
+    <rect
+      x={-RECT_W / 2 - 4}
+      y={-RECT_H / 2 - 4}
+      width={RECT_W + 8}
+      height={RECT_H + 8}
+      rx={rx}
+      fill="none"
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+    />
+  );
+}
+
+function ShapeSwatch({ shape }: { shape: NodeShape }) {
+  const fill = "#eceff1";
+  const stroke = "#5a5c66";
+  return (
+    <svg width={22} height={14} viewBox="-11 -7 22 14" className="shrink-0">
+      {shape === "circle" && (
+        <circle r={5} fill={fill} stroke={stroke} strokeWidth={1} />
+      )}
+      {shape === "diamond" && (
+        <polygon points="0,-6 8,0 0,6 -8,0" fill={fill} stroke={stroke} strokeWidth={1} />
+      )}
+      {(shape === "rect" || shape === "rect-dashed") && (
+        <rect
+          x={-9}
+          y={-5}
+          width={18}
+          height={10}
+          rx={1.5}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={1}
+          strokeDasharray={shape === "rect-dashed" ? "2 1.5" : undefined}
+        />
+      )}
+      {shape === "pill" && (
+        <rect
+          x={-9}
+          y={-5}
+          width={18}
+          height={10}
+          rx={5}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={1}
+        />
+      )}
+    </svg>
+  );
+}
+
+const FOCUS_RISK_PILL: Record<"HIGH" | "MEDIUM" | "LOW", string> = {
+  HIGH:   "bg-error-container text-on-error-container",
+  MEDIUM: "bg-secondary-fixed text-on-secondary-fixed",
+  LOW:    "bg-primary-fixed text-on-primary-fixed",
+};
+
+export default function EntitySubgraph({
+  subgraph,
+  connectionFocus,
+}: {
+  subgraph: CaseAssessment["subgraph"];
+  connectionFocus: ConnectionFocus | null;
+}) {
+  const W = 1100;
+  const H = 680;
+
+  const POS = computeHierarchicalLayout(subgraph.nodes, subgraph.edges, W, H);
+  const seed = subgraph.nodes.length > 0 ? pickSeed(subgraph.nodes, subgraph.edges) : null;
+
+  const presentKinds = Array.from(new Set(subgraph.edges.map((e) => e.kind)));
+  const presentShapes = Array.from(new Set(subgraph.nodes.map((n) => TYPE_SHAPE[n.type])));
+  const shapeLegend = SHAPE_LEGEND.filter((s) => presentShapes.includes(s.shape));
+
+  // Hover gives a transient highlight; click pins a selection that drives the
+  // details panel on the right. Hover takes visual precedence so the user can
+  // preview connections without losing their pinned selection.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const activeId = hoveredId ?? selectedId;
+
+  const activeRelated = useMemo<Set<string> | null>(() => {
+    if (!activeId) return null;
+    const set = new Set<string>([activeId]);
+    for (const e of subgraph.edges) {
+      if (e.source === activeId) set.add(e.target);
+      else if (e.target === activeId) set.add(e.source);
+    }
+    return set;
+  }, [activeId, subgraph.edges]);
+
+  const isNodeDimmed = (id: string): boolean =>
+    activeRelated !== null && !activeRelated.has(id);
+  const isEdgeDimmed = (src: string, tgt: string): boolean =>
+    activeRelated !== null && !(activeRelated.has(src) && activeRelated.has(tgt));
+
+  const selectedNode = selectedId
+    ? subgraph.nodes.find((n) => n.id === selectedId) ?? null
+    : null;
+  const selectedConnections = selectedNode
+    ? subgraph.edges
+        .filter((e) => e.source === selectedNode.id || e.target === selectedNode.id)
+        .map((e) => {
+          const otherId = e.source === selectedNode.id ? e.target : e.source;
+          const other = subgraph.nodes.find((n) => n.id === otherId);
+          if (!other) return null;
+          const direction: "out" | "in" = e.source === selectedNode.id ? "out" : "in";
+          return { other, kind: e.kind, direction };
+        })
+        .filter(
+          (x): x is { other: SubgraphNode; kind: string; direction: "out" | "in" } =>
+            x !== null,
+        )
+    : [];
+
+  return (
+    <div className="relative w-full rounded border border-surface-container bg-surface-container-lowest p-6">
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-on-surface">
+          <Share2 size={16} strokeWidth={1.75} />
+          Entity Subgraph Topology
+        </h3>
+        <div className="flex gap-4 text-xs text-on-surface-variant">
+          <div className="flex items-center gap-1.5">
+            <span
+              className="inline-block h-3 w-3 rounded-sm border"
+              style={{ backgroundColor: RISK_COLOR.HIGH.fill, borderColor: RISK_COLOR.HIGH.stroke }}
+            />
+            High Risk
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span
+              className="inline-block h-3 w-3 rounded-sm border"
+              style={{ backgroundColor: RISK_COLOR.MEDIUM.fill, borderColor: RISK_COLOR.MEDIUM.stroke }}
+            />
+            Medium Risk
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span
+              className="inline-block h-3 w-3 rounded-sm border"
+              style={{ backgroundColor: RISK_COLOR.LOW.fill, borderColor: RISK_COLOR.LOW.stroke }}
+            />
+            Low Risk
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-12 flex flex-col overflow-hidden rounded border border-outline-variant/20 bg-surface-container-low/30 lg:col-span-8">
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="xMidYMid meet"
+            className="h-[30rem] w-full"
+            onClick={() => setSelectedId(null)}
+          >
+            <defs>
+              <marker
+                id="arrow"
+                viewBox="0 0 10 10"
+                refX="8"
+                refY="5"
+                markerWidth="7"
+                markerHeight="7"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#5a5c66" />
+              </marker>
+            </defs>
+
+            {subgraph.edges.map((e, i) => {
+              const a = POS[e.source];
+              const b = POS[e.target];
+              const srcNode = subgraph.nodes.find((n) => n.id === e.source);
+              const tgtNode = subgraph.nodes.find((n) => n.id === e.target);
+              if (!a || !b || !srcNode || !tgtNode) return null;
+              const style = EDGE_STYLE[e.kind] ?? EDGE_DEFAULT;
+              const start = nodeEdgePoint(a, b, TYPE_SHAPE[srcNode.type]);
+              const end = nodeEdgePoint(b, a, TYPE_SHAPE[tgtNode.type]);
+              const dimmed = isEdgeDimmed(e.source, e.target);
+              return (
+                <line
+                  key={i}
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke={style.stroke}
+                  strokeWidth={1.4}
+                  strokeDasharray={style.dash}
+                  markerEnd="url(#arrow)"
+                  opacity={dimmed ? 0.12 : 0.9}
+                  style={{ transition: "opacity 150ms" }}
+                />
+              );
+            })}
+
+            {subgraph.nodes.map((n) => {
+              const p = POS[n.id];
+              if (!p) return null;
+              const palette = RISK_COLOR[n.risk_tier ?? "NONE"];
+              const shape = TYPE_SHAPE[n.type];
+              const rectLike = isRectLike(shape);
+              const dimmed = isNodeDimmed(n.id);
+              const isSelected = n.id === selectedId;
+              return (
+                <g
+                  key={n.id}
+                  transform={`translate(${p.x}, ${p.y})`}
+                  opacity={dimmed ? 0.25 : 1}
+                  style={{ cursor: "pointer", transition: "opacity 150ms" }}
+                  onMouseEnter={() => setHoveredId(n.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    setSelectedId((prev) => (prev === n.id ? null : n.id));
+                  }}
+                >
+                  {isSelected && <SelectionRing shape={shape} />}
+                  {renderNodeShape(shape, palette)}
+                  {rectLike ? (
+                    <>
+                      <text
+                        y={n.note ? -4 : 4}
+                        textAnchor="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill={palette.text}
+                      >
+                        {truncate(n.label, 24)}
+                      </text>
+                      {n.note && (
+                        <text y={11} textAnchor="middle" fontSize={9} fill={palette.note}>
+                          {truncate(n.note, 26)}
+                        </text>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <text
+                        y={shape === "circle" ? CIRCLE_R + 14 : DIAMOND_RY + 14}
+                        textAnchor="middle"
+                        fontSize={11}
+                        fontWeight={600}
+                        fill={palette.text}
+                      >
+                        {truncate(n.label, 26)}
+                      </text>
+                      {n.note && (
+                        <text
+                          y={shape === "circle" ? CIRCLE_R + 26 : DIAMOND_RY + 26}
+                          textAnchor="middle"
+                          fontSize={9}
+                          fill={palette.note}
+                        >
+                          {truncate(n.note, 28)}
+                        </text>
+                      )}
+                    </>
+                  )}
+                </g>
+              );
+            })}
+
+            {seed?.metadata && POS[seed.id] && (
+              <g transform={`translate(${POS[seed.id].x}, ${POS[seed.id].y})`}>
+                {seed.metadata.jurisdiction && (
+                  <text
+                    y={RECT_H / 2 + 16}
+                    textAnchor="middle"
+                    fontSize={11}
+                    fontWeight={600}
+                    fontStyle="italic"
+                    fill="#5a4300"
+                  >
+                    {truncate(seed.metadata.jurisdiction, 36)}
+                  </text>
+                )}
+                {seed.metadata.address && (
+                  <text
+                    y={RECT_H / 2 + 32}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fill="#6b6f78"
+                  >
+                    {truncate(seed.metadata.address, 40)}
+                  </text>
+                )}
+              </g>
+            )}
+          </svg>
+
+          <div className="border-t border-outline-variant/20 bg-surface-container-lowest/60 px-4 py-2 text-[10px] text-on-surface-variant">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="font-semibold uppercase tracking-wider text-on-surface-variant/80">
+                Entity
+              </span>
+              {shapeLegend.map((s) => (
+                <div key={s.shape} className="flex items-center gap-1.5">
+                  <ShapeSwatch shape={s.shape} />
+                  <span className="whitespace-nowrap">{s.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span className="font-semibold uppercase tracking-wider text-on-surface-variant/80">
+                Relation
+              </span>
+              {presentKinds.map((kind) => {
+                const style = EDGE_STYLE[kind] ?? EDGE_DEFAULT;
+                return (
+                  <div key={kind} className="flex items-center gap-1.5">
+                    <svg width={22} height={6} className="shrink-0">
+                      <line
+                        x1={0}
+                        y1={3}
+                        x2={22}
+                        y2={3}
+                        stroke={style.stroke}
+                        strokeWidth={1.4}
+                        strokeDasharray={style.dash}
+                      />
+                    </svg>
+                    <span className="whitespace-nowrap">{style.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {selectedNode ? (
+          <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
+            <div className="mb-3 flex items-center justify-between border-b border-surface-container-high pb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                Node Details
+              </span>
+              <button
+                type="button"
+                aria-label="Close details"
+                onClick={() => setSelectedId(null)}
+                className="rounded p-0.5 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${FOCUS_RISK_PILL[selectedNode.risk_tier ?? "MEDIUM"]}`}
+              >
+                {selectedNode.risk_tier ?? "—"}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+                {selectedNode.type}
+              </span>
+            </div>
+            <div className="mb-3 break-words text-base font-bold leading-snug text-[#191c1d]">
+              {selectedNode.label}
+            </div>
+
+            {selectedNode.metadata && (selectedNode.metadata.jurisdiction || selectedNode.metadata.address) && (
+              <div className="mb-3 space-y-1 border-t border-surface-container-high pt-3 text-[11px] text-[#444653]">
+                {selectedNode.metadata.jurisdiction && (
+                  <div>
+                    <span className="font-semibold uppercase tracking-wider text-on-surface-variant/80">
+                      Jurisdiction ·{" "}
+                    </span>
+                    <span className="text-[#191c1d]">{selectedNode.metadata.jurisdiction}</span>
+                  </div>
+                )}
+                {selectedNode.metadata.address && (
+                  <div>
+                    <span className="font-semibold uppercase tracking-wider text-on-surface-variant/80">
+                      Registered ·{" "}
+                    </span>
+                    <span className="text-[#191c1d]">{selectedNode.metadata.address}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="border-t border-surface-container-high pt-3">
+              <div className="mb-2 flex items-baseline justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                  Direct connections
+                </span>
+                <span className="font-mono text-[10px] text-on-surface-variant/80">
+                  {selectedConnections.length}
+                </span>
+              </div>
+              {selectedConnections.length === 0 ? (
+                <div className="text-[11px] italic text-on-surface-variant/70">
+                  No direct connections in current view.
+                </div>
+              ) : (
+                <ul className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {selectedConnections.map((c, i) => {
+                    const style = EDGE_STYLE[c.kind] ?? EDGE_DEFAULT;
+                    return (
+                      <li
+                        key={`${c.other.id}-${c.kind}-${i}`}
+                        className="rounded border border-outline-variant/20 bg-surface-container-low/40 px-2 py-1.5"
+                      >
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="font-mono text-[10px] text-on-surface-variant/80">
+                            {c.direction === "out" ? "→" : "←"}
+                          </span>
+                          <span className="min-w-0 flex-1 break-words text-[12px] font-medium text-[#191c1d]">
+                            {c.other.label}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[9px] uppercase tracking-wider text-on-surface-variant/70">
+                            {c.other.type}
+                          </span>
+                          <span
+                            className="rounded-sm px-1 py-0.5 text-[9px] font-medium"
+                            style={{
+                              backgroundColor: `${style.stroke}1a`,
+                              color: style.stroke,
+                            }}
+                          >
+                            {style.label}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : connectionFocus ? (
+          <div className="col-span-12 rounded border border-outline-variant/30 bg-surface-container-lowest p-4 lg:col-span-4">
+            <div className="mb-3 border-b border-surface-container-high pb-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+              Connection Focus
+            </div>
+
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              <span
+                className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${FOCUS_RISK_PILL[connectionFocus.risk_tier]}`}
+              >
+                {connectionFocus.risk_tier}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-on-surface-variant/80">
+                {connectionFocus.counterparty_type}
+              </span>
+            </div>
+            <div className="mb-4 break-words text-base font-bold leading-snug text-[#191c1d]">
+              {connectionFocus.counterparty_label}
+            </div>
+
+            <div className="border-t border-surface-container-high pt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">
+                Linked via
+              </div>
+              <div className="mt-1 break-words text-sm font-medium text-[#191c1d]">
+                {connectionFocus.relationship_summary}
+              </div>
+              <div className="mt-1.5 text-[11px] text-[#444653]">
+                {connectionFocus.link_count === 1
+                  ? "1 graph link"
+                  : `${connectionFocus.link_count} graph links`}
+              </div>
+              <div className="mt-3 text-[10px] italic text-on-surface-variant/70">
+                Click any node to inspect.
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

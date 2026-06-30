@@ -4,6 +4,7 @@ import os
 import time
 
 from h2ogpte import H2OGPTE
+from h2ogpte_observability import traced_upload, traced_ingest_uploads
 
 BASE_DIR = os.path.dirname(__file__)
 SERVER_FILENAME = 'aml_guard_mcp.zip'
@@ -30,11 +31,12 @@ def create_chat(client: H2OGPTE, collection_id: str) -> str:
 def upload_and_ingest_mcp(client: H2OGPTE, collection_id: str) -> str:
     """Upload and ingest the MCP server file into the collection."""
     with open(SERVER_FILE, 'rb') as f:
-        upload_id = client.upload(SERVER_FILENAME, f)
+        upload_id = traced_upload(client, SERVER_FILENAME, f)
 
-    ingest_job = client.ingest_uploads(
-        collection_id=collection_id,
-        upload_ids=[upload_id],
+    ingest_job = traced_ingest_uploads(
+        client,
+        collection_id,
+        [upload_id],
         ingest_mode="agent_only",
     )
 
@@ -52,13 +54,45 @@ def upload_and_ingest_mcp(client: H2OGPTE, collection_id: str) -> str:
 
 
 def register_mcp_tool(client: H2OGPTE) -> list:
-    """Register the Splunk MCP tool with H2OGPTE."""
+    """Register the AML MCP tool with H2OGPTE (idempotent).
+
+    Each call to add_custom_agent_tool creates a new registration without
+    overwriting prior ones, so we explicitly delete any pre-existing
+    registrations under the same tool_name before adding the new one.
+
+    Notes on tool_args (per H2OGPTE SDK docs for add_custom_agent_tool):
+      - tool_usage_mode is only valid for tool_type="remote_mcp"; passing it
+        to a local_mcp registration is silently ignored or rejected.
+      - enable_by_default=True attaches the tool to all agent runs without
+        requiring per-call enabling. With False, the bundle is registered
+        but never appears in get_agent_tools_dict() at runtime, so the
+        agent never sees its functions.
+    """
+    # Clean up prior registrations: anything under SERVER_FILENAME, plus the
+    # legacy 'amlguard' name some earlier setups used. Each new
+    # add_custom_agent_tool call creates a fresh registration without
+    # overwriting prior ones, so this prevents accumulating duplicates
+    # across FastAPI restarts.
+    _STALE_NAMES = {SERVER_FILENAME, "amlguard"}
+    try:
+        existing = client.get_custom_agent_tools() or []
+        stale_ids = [
+            getattr(t, "id", None)
+            for t in existing
+            if getattr(t, "tool_name", None) in _STALE_NAMES
+            and getattr(t, "id", None)
+        ]
+        if stale_ids:
+            removed = client.delete_custom_agent_tool(stale_ids)
+            print(f"Removed {removed} stale custom agent tool registration(s).")
+    except Exception as e:
+        print(f"WARNING: could not clean up prior registrations: {e}")
+
     tool_ids = client.add_custom_agent_tool(
         tool_type="local_mcp",
         tool_args={
             'tool_name': SERVER_FILENAME,
-            'enable_by_default': False,
-            'tool_usage_mode': 'runner'
+            'enable_by_default': True,
         },
         custom_tool_path=SERVER_FILE
     )

@@ -1,52 +1,166 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { CaseAssessment, InvestigationStep } from "@/lib/types";
-import { investigate } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import type { CaseAssessment, DeepStatus, InvestigationStep } from "@/lib/types";
+import {
+  cancelDeepAnalysis,
+  getDeepStatus,
+  investigate,
+  startDeepAnalysis,
+} from "@/lib/api";
+
+const DEEP_POLL_INTERVAL_MS = 2500;
 import QuestionBar from "@/components/QuestionBar";
-import InvestigationStream from "@/components/InvestigationStream";
+import TopHeader from "@/components/TopHeader";
 import EntityHeader from "@/components/EntityHeader";
+import InvestigationStream from "@/components/InvestigationStream";
 import VerdictBanner from "@/components/VerdictBanner";
+import AgentTranscript from "@/components/AgentTranscript";
 import FindingsList from "@/components/FindingsList";
 import TypologyEvidence from "@/components/TypologyEvidence";
-import InvestigationTimeline from "@/components/InvestigationTimeline";
 import EntitySubgraph from "@/components/EntitySubgraph";
 
 type Phase = "idle" | "streaming" | "settled";
 
-// Fixed per-step offsets (seconds) anchored to the run's start time.
-// Index i = step i's delta from startedAt. Falls back to i*2s beyond the list.
-const STEP_OFFSET_SECONDS = [0, 2, 5, 7, 8];
+const STEP_OFFSET_SECONDS = [0, 2, 4, 6, 8];
 const SETTLE_BUFFER_MS = 500;
+
+const PLACEHOLDER_STEP_TEMPLATE: Omit<InvestigationStep, "timestamp">[] = [
+  {
+    tool: "traverse_entity_network",
+    summary: "Pulling 2-hop entity subgraph from the graph…",
+  },
+  {
+    tool: "detect_graph_anomalies",
+    summary: "Running 6 anomaly patterns against Layer 1…",
+  },
+  {
+    tool: "retrieve_typology_chunks",
+    summary: "Retrieving regulatory citations per fired pattern…",
+  },
+  {
+    tool: "narrative_synthesis",
+    summary: "Drafting analyst narrative with H2OGPTe…",
+  },
+];
 
 function rebaseStepTimestamps(steps: InvestigationStep[], startedAtMs: number): InvestigationStep[] {
   return steps.map((s, i) => {
-    const offsetSec = STEP_OFFSET_SECONDS[i] ?? STEP_OFFSET_SECONDS.at(-1)! + (i - STEP_OFFSET_SECONDS.length + 1) * 2;
+    const offsetSec =
+      STEP_OFFSET_SECONDS[i] ??
+      STEP_OFFSET_SECONDS.at(-1)! + (i - STEP_OFFSET_SECONDS.length + 1) * 2;
     return { ...s, timestamp: new Date(startedAtMs + offsetSec * 1000).toISOString() };
   });
+}
+
+function buildPlaceholderSteps(startedAtMs: number): InvestigationStep[] {
+  return PLACEHOLDER_STEP_TEMPLATE.map((s, i) => ({
+    ...s,
+    timestamp: new Date(startedAtMs + STEP_OFFSET_SECONDS[i] * 1000).toISOString(),
+  }));
 }
 
 export default function InvestigatePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [assessment, setAssessment] = useState<CaseAssessment | null>(null);
   const [question, setQuestion] = useState<string>("");
+  const [startedAt, setStartedAt] = useState<number>(0);
+  const [placeholderSteps, setPlaceholderSteps] = useState<InvestigationStep[]>([]);
+  const [handedOff, setHandedOff] = useState(false);
+  const [sarFiled, setSarFiled] = useState(false);
+  const [deepAnalyzing, setDeepAnalyzing] = useState(false);
+  const [deepAnalysisDone, setDeepAnalysisDone] = useState(false);
+  const [deepJobId, setDeepJobId] = useState<string | null>(null);
+  const [deepStatus, setDeepStatus] = useState<DeepStatus | null>(null);
+  const [deepError, setDeepError] = useState<string | null>(null);
   const subjectRef = useRef<HTMLDivElement | null>(null);
+
+  async function runDeepAnalysis() {
+    if (!question || deepAnalyzing) return;
+    setDeepAnalyzing(true);
+    setDeepError(null);
+    setDeepStatus(null);            // drop any stale events from a prior failed run
+    setDeepAnalysisDone(false);
+    try {
+      const { job_id } = await startDeepAnalysis(question);
+      setDeepJobId(job_id);
+    } catch (err) {
+      console.error("Deep analysis failed to start:", err);
+      setDeepError(err instanceof Error ? err.message : String(err));
+      setDeepAnalyzing(false);
+    }
+  }
+
+  async function stopWatchingDeep() {
+    if (!deepJobId) return;
+    try {
+      await cancelDeepAnalysis(deepJobId);
+    } catch (err) {
+      console.warn("cancelDeepAnalysis failed (ignoring):", err);
+    }
+    setDeepJobId(null);
+    setDeepAnalyzing(false);
+    setDeepStatus(null);
+  }
+
+  useEffect(() => {
+    if (!deepJobId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await getDeepStatus(deepJobId);
+        if (cancelled) return;
+        setDeepStatus(s);
+        if (s.status === "done" && s.result) {
+          setAssessment((prev) => (prev ? { ...prev, ...s.result! } : s.result));
+          setDeepAnalysisDone(true);
+          setDeepAnalyzing(false);
+          setDeepJobId(null);
+        } else if (s.status === "error") {
+          setDeepError(s.error ?? "Deep analysis errored");
+          setDeepAnalyzing(false);
+          setDeepJobId(null);
+        } else if (s.status === "cancelled") {
+          setDeepAnalyzing(false);
+          setDeepJobId(null);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("getDeepStatus poll failed (will retry):", err);
+      }
+    };
+    void tick();
+    const t = setInterval(tick, DEEP_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [deepJobId]);
 
   async function handleSubmit(q: string) {
     setQuestion(q);
     setPhase("streaming");
     setAssessment(null);
+    setHandedOff(false);
+    setSarFiled(false);
+    setDeepAnalyzing(false);
+    setDeepAnalysisDone(false);
+    setDeepJobId(null);
+    setDeepStatus(null);
+    setDeepError(null);
     const startedAt = Date.now();
-    const result = await investigate(q);
-    const rebased = { ...result, investigation_steps: rebaseStepTimestamps(result.investigation_steps, startedAt) };
-    setAssessment(rebased);
-
-    // Scroll focus to the subject once it's rendered.
+    setStartedAt(startedAt);
+    setPlaceholderSteps(buildPlaceholderSteps(startedAt));
     setTimeout(() => {
       subjectRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
+    const result = await investigate(q);
+    const rebased = {
+      ...result,
+      investigation_steps: rebaseStepTimestamps(result.investigation_steps, startedAt),
+    };
+    setAssessment(rebased);
 
-    // Wait for the last agent card to flip done, then reveal the rest.
     const lastTsMs = rebased.investigation_steps.length
       ? new Date(rebased.investigation_steps[rebased.investigation_steps.length - 1].timestamp).getTime()
       : startedAt;
@@ -54,78 +168,127 @@ export default function InvestigatePage() {
     setTimeout(() => setPhase("settled"), revealMs);
   }
 
-  const compact = phase !== "idle";
-
   return (
-    <div className="mx-auto w-full max-w-canvas px-6 py-8 sm:px-10 sm:py-12">
-      {!compact && (
-        <header className="mb-10">
-          <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-text-muted">
-            AML Guard · Investigation
-          </div>
-          <h1 className="font-display text-4xl leading-tight text-text sm:text-5xl">
-            Follow the money. Cite the rule.
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-text-muted">
-            An agent traverses the entity graph, runs six anomaly patterns, and matches behaviour
-            to MAS Notice 626, FATF, and AUSTRAC typologies — returning a verdict with cited evidence.
-          </p>
-        </header>
-      )}
+    <>
+      <TopHeader caseId={assessment?.case_id} jurisdiction={assessment?.subject.jurisdiction} />
 
+      <div className="flex-1 overflow-auto p-6">
+        {phase === "idle" && (
+          <div className="mx-auto max-w-3xl py-12">
+            <header className="mb-8">
+              <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">
+                AML Guard · Investigation
+              </div>
+              <h1 className="text-4xl font-black leading-tight tracking-tight text-on-surface sm:text-5xl">
+                Follow the money. Cite the rule.
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-on-surface-variant">
+                An agent traverses the entity graph, runs six anomaly patterns, and matches
+                behaviour to MAS Notice 626 and FATF typologies — returning a verdict
+                with cited evidence.
+              </p>
+            </header>
 
-      <QuestionBar
-        onSubmit={handleSubmit}
-        disabled={phase === "streaming"}
-        currentQuestion={question}
-        compact={compact}
-      />
-
-      {compact && assessment && (
-        <section ref={subjectRef} className="mt-10 scroll-mt-6">
-          <EntityHeader subject={assessment.subject} caseId={assessment.case_id} />
-        </section>
-      )}
-
-      {compact && assessment && (
-        <section className="mt-8">
-          <InvestigationStream
-            steps={assessment.investigation_steps}
-            isStreaming={phase === "streaming"}
-          />
-        </section>
-      )}
-
-      {assessment && phase === "settled" && (
-        <>
-          <section className="mt-6">
-            <VerdictBanner
-              verdict={assessment.verdict}
-              riskScore={assessment.risk_score}
-              headline={assessment.headline}
-              txVelocity={assessment.tx_velocity}
+            <QuestionBar
+              onSubmit={handleSubmit}
+              disabled={false}
+              currentQuestion={question}
             />
-          </section>
+          </div>
+        )}
 
-          <section className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-5">
-            <div className="lg:col-span-3">
-              <FindingsList findings={assessment.findings} />
-            </div>
-            <div className="lg:col-span-2">
-              <TypologyEvidence chunks={assessment.typology_chunks} />
-            </div>
-          </section>
+        {phase !== "idle" && (
+          <div ref={subjectRef}>
+            {assessment ? (
+              <EntityHeader
+                subject={assessment.subject}
+                caseId={assessment.case_id}
+                phase={phase}
+                handedOff={handedOff}
+                sarFiled={sarFiled}
+              />
+            ) : (
+              <div className="mb-8">
+                <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-on-surface-variant">
+                  AML Guard · Investigation in progress
+                </div>
+                <h1 className="text-2xl font-bold leading-tight tracking-tight text-on-surface">
+                  {question}
+                </h1>
+              </div>
+            )}
 
-          <section className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-5">
-            <div className="lg:col-span-3">
-              <InvestigationTimeline steps={assessment.investigation_steps} />
+            <div className="mb-6 grid grid-cols-12 gap-6">
+              <div className="col-span-12 lg:col-span-8">
+                {phase === "settled" && assessment ? (
+                  <VerdictBanner
+                    verdict={assessment.verdict}
+                    riskScore={assessment.risk_score}
+                    headline={assessment.headline}
+                    summary={assessment.summary}
+                    recommendedActions={assessment.recommended_actions}
+                    txVelocity={assessment.tx_velocity}
+                    riskDecomposition={assessment.risk_decomposition}
+                    findings={assessment.findings}
+                    typologyChunks={assessment.typology_chunks}
+                    caseId={assessment.case_id}
+                    handedOff={handedOff}
+                    onHandoff={() => setHandedOff(true)}
+                    onSarFiled={() => setSarFiled(true)}
+                    onDeepAnalyze={runDeepAnalysis}
+                    onStopWatchingDeep={stopWatchingDeep}
+                    deepAnalyzing={deepAnalyzing}
+                    deepAnalysisDone={deepAnalysisDone}
+                    deepStatus={deepStatus}
+                    deepError={deepError}
+                  />
+                ) : (
+                  <div className="flex h-full min-h-[220px] items-center justify-center rounded border border-dashed border-outline-variant/40 bg-surface-container-lowest p-8 text-sm text-on-surface-variant">
+                    Verdict pending — agent is gathering evidence…
+                  </div>
+                )}
+              </div>
+              <div className="col-span-12 lg:col-span-4">
+                <InvestigationStream
+                  key={startedAt}
+                  steps={assessment?.investigation_steps ?? placeholderSteps}
+                  isStreaming={phase === "streaming"}
+                />
+              </div>
             </div>
-            <div className="lg:col-span-2">
-              <EntitySubgraph subgraph={assessment.subgraph} />
-            </div>
-          </section>
-        </>
-      )}
-    </div>
+
+            {phase === "settled" && assessment && (
+              <>
+                {(deepAnalyzing || deepAnalysisDone || (deepStatus?.agent_events?.length ?? 0) > 0) && (
+                  <AgentTranscript
+                    events={deepStatus?.agent_events ?? []}
+                    isRunning={deepAnalyzing}
+                    elapsedSeconds={deepStatus?.elapsed_seconds ?? 0}
+                    phaseLabel={deepStatus?.phase_label ?? ""}
+                  />
+                )}
+
+                <div className="mb-6 grid grid-cols-12 items-start gap-6">
+                  <div className="col-span-12 lg:col-span-8">
+                    <FindingsList
+                      findings={assessment.findings}
+                      chunks={assessment.typology_chunks}
+                    />
+                  </div>
+                  <div className="col-span-12 lg:col-span-4">
+                    <TypologyEvidence chunks={assessment.typology_chunks} />
+                  </div>
+                </div>
+
+                <EntitySubgraph
+                  subgraph={assessment.subgraph}
+                  connectionFocus={assessment.connection_focus}
+                />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

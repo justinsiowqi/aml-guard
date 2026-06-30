@@ -7,8 +7,7 @@ import re
 import time
 from typing import Any
 
-from h2ogpte.types import Answer
-from h2ogpte import SessionError
+from h2ogpte.types import Answer, SessionError
 
 from src.agent.config import MAX_RETRY_SECONDS, TOOL_RESULT_CHAR_LIMIT
 

@@ -12,6 +12,19 @@
   "risk_score": 0.87,
   "headline": "Shell-company opacity with structuring signal: four inbound wires under SGD 500K in 22 days via BVI entities set up by Mossack Fonseca.",
   "tx_velocity": [0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+  "risk_decomposition": [
+    { "label": "Ownership Opacity",   "value": 0.85 },
+    { "label": "Jurisdiction",        "value": 0.92 },
+    { "label": "Intermediary",        "value": 0.78 },
+    { "label": "Address Clustering",  "value": 0.45 }
+  ],
+  "connection_focus": {
+    "counterparty_label": "Mossack Fonseca",
+    "counterparty_type": "Intermediary",
+    "risk_tier": "HIGH",
+    "relationship_summary": "Intermediary of",
+    "link_count": 1
+  },
   "findings": [
     {
       "id": "f_structuring",
@@ -85,12 +98,6 @@
       "timestamp": "2026-04-17T09:12:09Z"
     },
     {
-      "tool": "persist_case_finding",
-      "summary": "Wrote CaseAssessment + 3 RiskFindings + 4 InvestigationSteps to Layer 3. Assessment ID: assess_20260417_0912_a1f3.",
-      "cypher_used": "MERGE (c:Company {node_id: $entity_id})\nCREATE (a:CaseAssessment {assessment_id: $assessment_id, verdict: $verdict, risk_score: $risk_score, agent: 'AMLAgent/claude-sonnet-4-6', created_at: datetime()})\nCREATE (c)-[:HAS_ASSESSMENT]->(a)",
-      "timestamp": "2026-04-17T09:12:11Z"
-    },
-    {
       "tool": "trace_evidence",
       "summary": "Retrieved the 3 cited typology chunks and 3 requirement sections linked to this assessment for the evidence panel.",
       "cited_chunks": ["ch_mas_626_6_4", "ch_mas_626_4_1", "ch_fatf_rec_24"],
@@ -100,12 +107,10 @@
   "subgraph": {
     "nodes": [
       { "id": "p_jonathan_lim", "label": "Jonathan Lim Wei Ming", "type": "Person", "risk_tier": "HIGH", "note": "STR subject · Singapore" },
-      { "id": "c_nielsen", "label": "Nielsen Enterprises Ltd", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
+      { "id": "c_nielsen", "label": "Nielsen Enterprises Ltd", "type": "Company", "risk_tier": "HIGH", "metadata": { "jurisdiction": "British Virgin Islands", "address": "Jersey, United Kingdom" } },
       { "id": "c_nescoll", "label": "Nescoll Limited", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
       { "id": "c_hangon", "label": "Hangon Property Holdings", "type": "Company", "risk_tier": "HIGH", "note": "BVI · shell" },
-      { "id": "i_mossack", "label": "Mossack Fonseca", "type": "Intermediary", "risk_tier": "HIGH", "note": "Panama · historic" },
-      { "id": "j_bvi", "label": "British Virgin Islands", "type": "Jurisdiction", "risk_tier": "HIGH", "note": "AML risk: high" },
-      { "id": "a_bsi_geneva", "label": "BSI Bank, Geneva", "type": "Address", "risk_tier": "MEDIUM", "note": "ordering bank" }
+      { "id": "i_mossack", "label": "Mossack Fonseca", "type": "Intermediary", "risk_tier": "HIGH", "note": "Panama · historic" }
     ],
     "edges": [
       { "source": "p_jonathan_lim", "target": "c_nielsen", "kind": "RECEIVED_WIRE_FROM" },
@@ -113,11 +118,7 @@
       { "source": "p_jonathan_lim", "target": "c_hangon", "kind": "RECEIVED_WIRE_FROM" },
       { "source": "i_mossack", "target": "c_nielsen", "kind": "INTERMEDIARY_OF" },
       { "source": "i_mossack", "target": "c_nescoll", "kind": "INTERMEDIARY_OF" },
-      { "source": "i_mossack", "target": "c_hangon", "kind": "INTERMEDIARY_OF" },
-      { "source": "c_nielsen", "target": "j_bvi", "kind": "INCORPORATED_IN" },
-      { "source": "c_nescoll", "target": "j_bvi", "kind": "INCORPORATED_IN" },
-      { "source": "c_hangon", "target": "j_bvi", "kind": "INCORPORATED_IN" },
-      { "source": "c_nielsen", "target": "a_bsi_geneva", "kind": "ROUTED_THROUGH" }
+      { "source": "i_mossack", "target": "c_hangon", "kind": "INTERMEDIARY_OF" }
     ]
   },
   "created_at": "2026-04-17T09:12:12Z"

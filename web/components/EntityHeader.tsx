@@ -1,56 +1,64 @@
 import type { CaseAssessment } from "@/lib/types";
-import { Building2, MapPin, Briefcase, FileText } from "lucide-react";
+import { CheckCircle2, FileDown, Loader2 } from "lucide-react";
+
+type Phase = "idle" | "streaming" | "settled";
+
+const STATUS_LABEL: Record<Phase, string> = {
+  idle: "Pending",
+  streaming: "Streaming",
+  settled: "Settled",
+};
 
 export default function EntityHeader({
   subject,
   caseId,
+  phase = "settled",
+  handedOff = false,
+  sarFiled = false,
 }: {
   subject: CaseAssessment["subject"];
-  caseId: string;
+  caseId?: string;
+  phase?: Phase;
+  handedOff?: boolean;
+  sarFiled?: boolean;
 }) {
   return (
-    <div>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="font-display text-4xl leading-tight text-text sm:text-5xl">
-          {subject.name}
-        </h2>
-        <code className="mt-2 shrink-0 rounded-sm bg-surface-alt px-2 py-1 font-mono text-[11px] text-text-muted">
-          {caseId}
-        </code>
+    <div className="mb-8">
+      <div className="flex items-center justify-between gap-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="text-3xl font-black tracking-tight text-on-surface">{subject.name}</h1>
+          <span className="rounded-sm bg-[#444653] px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white">
+            {STATUS_LABEL[phase]}
+          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded border border-outline-variant/30 px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-surface-container-low"
+          >
+            <FileDown size={16} strokeWidth={1.75} />
+            Export PDF
+          </button>
+          {sarFiled ? (
+            <div className="flex items-center gap-2 rounded border border-primary/40 bg-primary-container px-4 py-2 text-sm font-semibold text-on-primary-container shadow-sm">
+              <CheckCircle2 size={16} strokeWidth={2} />
+              <span>SAR filed · {caseId ?? "STR-PENDING"}</span>
+            </div>
+          ) : handedOff ? (
+            <div className="flex items-center gap-2 rounded border border-primary/30 bg-primary-fixed/30 px-4 py-2 text-sm font-semibold text-on-surface shadow-sm">
+              <Loader2 size={16} strokeWidth={2} className="animate-spin text-primary" />
+              <span>Agents filing SAR…</span>
+            </div>
+          ) : null}
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
-        <Chip icon={Building2} label={subject.type} />
-        <Chip icon={MapPin} label={subject.jurisdiction} tone="danger" />
-        <Chip icon={Briefcase} label="Mossack Fonseca (historic)" tone="warning" />
-      </div>
-      <div className="mt-4 flex max-w-[72ch] items-start gap-2.5 rounded-md border border-border/70 bg-surface-alt/60 px-3.5 py-2.5">
-        <FileText size={13} strokeWidth={1.75} className="mt-[3px] shrink-0 text-text-muted" />
-        <p className="text-pretty text-[13px] leading-relaxed text-text/80">
+
+      <div className="mt-2 grid grid-cols-12 gap-6">
+        <div className="col-span-12 text-sm text-on-surface-variant lg:col-span-8">
           {subject.profile_snippet}
-        </p>
+        </div>
       </div>
     </div>
-  );
-}
-
-function Chip({
-  icon: Icon,
-  label,
-  tone = "neutral",
-}: {
-  icon: typeof Building2;
-  label: string;
-  tone?: "neutral" | "danger" | "warning";
-}) {
-  const tones = {
-    neutral: "border-border bg-surface text-text",
-    danger: "border-danger/20 bg-danger/5 text-danger",
-    warning: "border-warning/20 bg-warning/5 text-warning",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${tones[tone]}`}>
-      <Icon size={12} strokeWidth={1.75} />
-      {label}
-    </span>
   );
 }
