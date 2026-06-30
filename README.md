@@ -184,7 +184,14 @@ Or run the equivalent notebooks: `111`, `211` → `213`.
 
 ## Running the app
 
-Two terminals:
+- Place FATF/AUSTRAC PDFs in `data/layer_2/regulatory_documents/`
+- Register them in `data/layer_2/document_config.yaml`
+
+```bash
+python scripts/ingest_layer2.py --reset
+python scripts/embed_chunks.py 
+python scripts/validate_layer2.py
+```
 
 **Terminal 1 — backend**
 
